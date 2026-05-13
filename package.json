@@ -4,8 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "start":   "node index.js",
+    "node1": "node --env-file=.env index.js",
+    "node2": "node --env-file=.env.node2 index.js",
+    "node3": "node --env-file=.env.node3 index.js",
+    "cluster": "concurrently \"npm run node1\" \"npm run node2\" \"npm run node3\"",
+    "dev":     "nodemon index.js"
   },
   "repository": {
     "type": "git",
@@ -20,11 +24,13 @@
   },
   "homepage": "https://github.com/AlenOrbanic/Brzojav-backend#readme",
   "dependencies": {
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1"
+    "cors":       "^2.8.6",
+    "dotenv":     "^17.4.2",
+    "express":    "^5.2.1",
+    "node-fetch": "^2.7.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "concurrently": "^8.2.2",
+    "nodemon":      "^3.1.14"
   }
 }
