@@ -9,7 +9,7 @@ const NODE_ID = process.env.NODE_ID || `node-${PORT}`;
 app.use(cors());
 app.use(express.json());
 
-// Attach node identity to every request handler
+//node id za svaki request handler
 app.set('nodeId', NODE_ID);
 app.set('port', PORT);
 
@@ -17,6 +17,7 @@ app.set('port', PORT);
 app.use('/api/users',   require('./routes/users'));
 app.use('/api/lookup',  require('./routes/lookup'));
 app.use('/api/sync',    require('./routes/sync'));
+app.use('/api/auth', require('./routes/auth'));
 
 // Health check
 app.get('/', (req, res) => {
@@ -30,7 +31,10 @@ app.get('/', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`[${NODE_ID}] Seed node running on port ${PORT}`);
-  setTimeout(() => require('./gossip').gossipRound(), 1500); // Sinkroniziramo nodeove odmah nakon pokretanja, ne čekamo prvi interval
+// Connect to database THEN start listening
+require('./db').connect().then(() => {
+  app.listen(PORT, () => {
+    console.log(`[${NODE_ID}] Seed node running on port ${PORT}`);
+    setTimeout(() => require('./gossip').gossipRound(), 1500);
+  });
 });
