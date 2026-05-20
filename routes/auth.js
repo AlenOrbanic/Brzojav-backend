@@ -38,10 +38,10 @@ router.post('/register', async (req, res) => {
       token,
       user: {
         username: user.username,
-        email:    user.email,
-        phone:    user.phone,
-        avatar:   user.avatar,
-        name:     user.name,
+        email: user.email,
+        phone: user.phone,
+        avatar: user.avatar,
+        name: user.name,
       },
     });
   } catch (err) {
@@ -61,7 +61,7 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({
       $or: [
         { username: identifier.toLowerCase() },
-        { email:    identifier.toLowerCase() },
+        { email: identifier.toLowerCase() },
       ],
     });
 
@@ -86,10 +86,10 @@ router.post('/login', async (req, res) => {
       token,
       user: {
         username: user.username,
-        email:    user.email,
-        phone:    user.phone,
-        avatar:   user.avatar,
-        name:     user.name,
+        email: user.email,
+        phone: user.phone,
+        avatar: user.avatar,
+        name: user.name,
       },
     });
   } catch (err) {
@@ -109,13 +109,13 @@ router.get('/me', authMiddleware, async (req, res) => {
     return res.json({
       ok: true,
       user: {
-        username:  user.username,
-        email:     user.email,
-        phone:     user.phone,
-        avatar:    user.avatar,
-        name:      user.name,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
+        avatar: user.avatar,
+        name: user.name,
         createdAt: user.createdAt,
-        showLastSeen:   user.showLastSeen,
+        showLastSeen: user.showLastSeen,
         allowStrangers: user.allowStrangers,
       },
     });
@@ -132,12 +132,13 @@ router.patch('/me', authMiddleware, async (req, res) => {
     const user = await User.findOne({ username: req.user.username });
     if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
 
-    if (name !== undefined) user.name     = name;
-    if (email !== undefined) user.email    = email;
-    if (phone !== undefined) user.phone    = phone;
-    if (avatar !== undefined) user.avatar   = avatar;
+    if (name !== undefined) user.name = name;
+    if (email !== undefined) user.email = email;
+    if (phone !== undefined) user.phone = phone;
+    if (avatar !== undefined) user.avatar = avatar;
     if (username !== undefined) user.username = username;
-
+    if (req.body.showLastSeen !== undefined) user.showLastSeen = req.body.showLastSeen;
+    if (req.body.allowStrangers !== undefined) user.allowStrangers = req.body.allowStrangers;
     await user.save();
 
     return res.json({ ok: true, user: {
@@ -152,4 +153,44 @@ router.patch('/me', authMiddleware, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
+
+// POST /api/auth/block
+router.post('/block', authMiddleware, async (req, res) => {
+  const { username, block } = req.body; // block: true = block, false = unblock
+  if (!username) return res.status(400).json({ ok: false, error: 'username is required' });
+  try {
+    const user = await User.findOne({ username: req.user.username });
+    if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+    if (block) {
+      if (!user.blockedUsers.includes(username)) user.blockedUsers.push(username);
+    } else {
+      user.blockedUsers = user.blockedUsers.filter(u => u !== username);
+    }
+    await user.save();
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[auth] POST /block error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+router.patch('/password', authMiddleware, async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json({ ok: false, error: 'Both passwords are required' });
+  }
+  try {
+    const user = await User.findOne({ username: req.user.username });
+    if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+    const valid = await bcrypt.compare(oldPassword, user.password);
+    if (!valid) return res.status(400).json({ ok: false, error: 'Old password is incorrect' });
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[auth] PATCH /password error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
 module.exports = router;

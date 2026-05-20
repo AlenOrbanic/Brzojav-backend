@@ -13,7 +13,6 @@ router.get('/', async (req, res) => {
   try {
     const chats = await Chat.find({ members: me }).sort({ lastMessageAt: -1 });
 
-    //user settings za chatove(pinned, muted, nickname)
     const userChats = await UserChat.find({
       username: me,
       chatId: { $in: chats.map(c => c._id) },
@@ -24,18 +23,27 @@ router.get('/', async (req, res) => {
       settingsMap[uc.chatId.toString()] = uc;
     }
 
-    // For DM chats, fetch the other person's profile so we have their avatar/name
     const dmUsernames = chats
       .filter(c => !c.isGroup)
       .flatMap(c => c.members.filter(m => m !== me));
 
-    const uniqueUsernames = [...new Set(dmUsernames)]; // Miče duplikate ako postoje
+    const uniqueUsernames = [...new Set(dmUsernames)];
     const profiles = await User.find(
       { username: { $in: uniqueUsernames } },
       'username name avatar lastSeen'
     );
     const profileMap = {};
     for (const p of profiles) profileMap[p.username] = p;
+
+    const groupChats = chats.filter(c => c.isGroup);
+    const allGroupMemberUsernames = [...new Set(groupChats.flatMap(c => c.members))];
+    const groupMemberProfiles = await User.find(
+      { username: { $in: allGroupMemberUsernames } },
+      'username name avatar lastSeen'
+    );
+
+    const memberMap = {};
+    for (const p of groupMemberProfiles) memberMap[p.username] = p;
 
     const result = chats.map(chat => {
       const settings = settingsMap[chat._id.toString()] || {};
@@ -45,8 +53,8 @@ router.get('/', async (req, res) => {
         members: chat.members,
         lastMessage: chat.lastMessage,
         lastMessageAt: chat.lastMessageAt,
-        pinned: settings.pinned  || false,
-        muted: settings.muted   || false,
+        pinned: settings.pinned || false,
+        muted: settings.muted || false,
         nickname: settings.nickname || '',
       };
 
@@ -56,19 +64,21 @@ router.get('/', async (req, res) => {
           name: chat.name,
           avatar: chat.avatar,
           ownerId: chat.ownerId,
-        };
-      } else {
-        // DM — use the other person's profile for name/avatar
-        const other = chat.members.find(m => m !== me);
-        const profile = profileMap[other] || {};
-        return {
-          ...base,
-          name: settings.nickname || profile.name || other,
-          avatar: profile.avatar || '',
-          username: other,
-          lastSeen: profile.lastSeen || null,
+          members: chat.members.map(username => ({
+            username,
+            name:     memberMap[username]?.name     || username,
+            avatar:   memberMap[username]?.avatar   || '',
+            lastSeen: memberMap[username]?.lastSeen || null,
+            isOwner:  username === chat.ownerId,
+            isMe:     username === me,
+          })),
         };
       }
+
+      return {
+        ...base,
+        otherUser: profileMap[chat.members.find(m => m !== me)] || null,
+      };
     });
 
     return res.json({ ok: true, chats: result });
