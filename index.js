@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 3000;
 const NODE_ID = process.env.NODE_ID || `node-${PORT}`;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 //node id za svaki request handler
 app.set('nodeId', NODE_ID);
@@ -16,9 +16,9 @@ app.set('port', PORT);
 const authMiddleware = require('./middleware/auth');
 
 // Routes
-app.use('/api/users',   require('./routes/users'));
-app.use('/api/lookup',  require('./routes/lookup'));
-app.use('/api/sync',    require('./routes/sync'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/lookup', require('./routes/lookup'));
+app.use('/api/sync', require('./routes/sync'));
 app.use('/api/auth', require('./routes/auth'));
 
 // Zahtjevaju autentikaciju (token)

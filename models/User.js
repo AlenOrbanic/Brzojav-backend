@@ -6,7 +6,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true }, // hash
   phone: { type: String, default: '' },
-  avatar: { type: String, default: '' }, // url
+  avatar: { type: String, default: 'https://i.pinimg.com/1200x/c5/ab/41/c5ab41e3f9766798af79b40d535f45e0.jpg' },
   lastSeen: { type: Date, default: Date.now },
   showLastSeen: { type: Boolean, default: true },
   allowStrangers: { type: Boolean, default: true },

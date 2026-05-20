@@ -1,7 +1,7 @@
-const router   = require('express').Router();
-const bcrypt   = require('bcryptjs');
-const jwt      = require('jsonwebtoken');
-const User     = require('../models/User');
+const router = require('express').Router();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -98,4 +98,58 @@ router.post('/login', async (req, res) => {
   }
 });
 
+const authMiddleware = require('../middleware/auth'); //Register i login moraju biti bez tokena dok me ruta ga mora imati
+
+// GET /api/auth/me — dohvati profil trenutnog usera
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.user.username });
+    if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+
+    return res.json({
+      ok: true,
+      user: {
+        username:  user.username,
+        email:     user.email,
+        phone:     user.phone,
+        avatar:    user.avatar,
+        name:      user.name,
+        createdAt: user.createdAt,
+        showLastSeen:   user.showLastSeen,
+        allowStrangers: user.allowStrangers,
+      },
+    });
+  } catch (err) {
+    console.error('[auth] GET /me error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+// PATCH /api/auth/me — update profil trenutnog usera
+router.patch('/me', authMiddleware, async (req, res) => {
+  const { name, username, email, phone, avatar } = req.body;
+
+  try {
+    const user = await User.findOne({ username: req.user.username });
+    if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+
+    if (name !== undefined) user.name     = name;
+    if (email !== undefined) user.email    = email;
+    if (phone !== undefined) user.phone    = phone;
+    if (avatar !== undefined) user.avatar   = avatar;
+    if (username !== undefined) user.username = username;
+
+    await user.save();
+
+    return res.json({ ok: true, user: {
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      avatar: user.avatar,
+      name: user.name,
+    }});
+  } catch (err) {
+    console.error('[auth] PATCH /me error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
 module.exports = router;
