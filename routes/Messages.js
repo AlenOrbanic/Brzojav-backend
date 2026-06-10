@@ -33,7 +33,6 @@ router.get('/:chatId', async (req, res) => {
   }
 });
 
-// POST /api/messages/:chatId — slanje poruke, prima multipart/form-data umjesto base64
 router.post('/:chatId', upload.array('files', 10), async (req, res) => {
   const me      = req.user.username;
   const chatId  = req.params.chatId;
@@ -53,7 +52,7 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
     // Upload svaki fajl na Cloudinary i spremi URL
     const files = [];
     for (const file of (req.files || [])) {
-      const isVideo = file.mimetype.startsWith('video');
+      const isVideo  = file.mimetype.startsWith('video');
       const isImage = file.mimetype.startsWith('image');
       const resourceType = isVideo ? 'video' : isImage ? 'image' : 'raw';
 
@@ -69,7 +68,7 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
       files.push({
         fileType: isVideo ? 'video' : isImage ? 'image' : 'file',
         url:      result.secure_url,
-        name:     file.originalname, // always the original name with extension
+        name:     file.originalname,
       });
     }
 
@@ -86,9 +85,38 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
     chat.lastMessageAt = new Date();
     await chat.save();
 
+    // Svim drugim chat memberima pošalji novu poruku
+    const io          = req.app.get('io');
+    const onlineUsers = req.app.get('onlineUsers');
+
+    for (const member of chat.members) {
+      if (member === me) continue;
+      const socketId = onlineUsers.get(member);
+      if (socketId) {
+        io.to(socketId).emit('new_message', {
+          chatId:  chatId.toString(),
+          message: {
+            id:        message._id,
+            sender:    me,
+            text:      message.text,
+            files:     message.files,
+            replyTo:   message.replyTo,
+            reactions: message.reactions,
+            time:      message.createdAt,
+          },
+        });
+
+        // Refresh chat sidebar
+        io.to(socketId).emit('chat_updated', {
+          chatId: chatId.toString(),
+          lastMessage: chat.lastMessage,
+        });
+      }
+    }
+
     return res.status(201).json({ ok: true, message });
   } catch (err) {
-    console.error('[messages] POST error:', err); // ← full error not just message
+    console.error('[messages] POST error:', err);
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });

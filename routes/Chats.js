@@ -111,9 +111,20 @@ router.post('/', async (req, res) => {
     // Look for existing DM chat between the two users
     const members = [me, username].sort();
     let chat = await Chat.findOne({ isGroup: false, members: { $all: members, $size: 2 } });
+    const isNew = !chat;
 
     if (!chat) {
       chat = await Chat.create({ members, isGroup: false });
+    }
+
+    // Notify the other user in real time so their sidebar updates instantly
+    if (isNew) {
+      const io          = req.app.get('io');
+      const onlineUsers = req.app.get('onlineUsers');
+      const socketId    = onlineUsers.get(username);
+      if (socketId) {
+        io.to(socketId).emit('chat_added');
+      }
     }
 
     return res.json({ ok: true, chat });
@@ -142,6 +153,17 @@ router.post('/group', async (req, res) => {
       name,
       ownerId: me,
     });
+
+    // Notify all members except creator so their sidebar updates instantly
+    const io          = req.app.get('io');
+    const onlineUsers = req.app.get('onlineUsers');
+    for (const member of allMembers) {
+      if (member === me) continue;
+      const socketId = onlineUsers.get(member);
+      if (socketId) {
+        io.to(socketId).emit('chat_added');
+      }
+    }
 
     return res.status(201).json({ ok: true, chat });
   } catch (err) {
@@ -205,6 +227,15 @@ router.post('/:id/leave', async (req, res) => {
 
     if (chat.ownerId === me) {
       // Owner leaving = delete the group entirely
+      const io          = req.app.get('io');
+      const onlineUsers = req.app.get('onlineUsers');
+      for (const member of chat.members) {
+        if (member === me) continue;
+        const socketId = onlineUsers.get(member);
+        if (socketId) {
+          io.to(socketId).emit('chat_removed', { chatId: chatId.toString() });
+        }
+      }
       await Message.deleteMany({ chatId });
       await UserChat.deleteMany({ chatId });
       await chat.deleteOne();
@@ -238,6 +269,13 @@ router.post('/:id/kick', async (req, res) => {
     chat.members = chat.members.filter(m => m !== username);
     await chat.save();
     await UserChat.deleteOne({ username, chatId });
+
+    const io          = req.app.get('io');
+    const onlineUsers = req.app.get('onlineUsers');
+    const socketId    = onlineUsers.get(username);
+    if (socketId) {
+      io.to(socketId).emit('chat_removed', { chatId: chatId.toString() });
+    }
 
     return res.json({ ok: true });
   } catch (err) {
