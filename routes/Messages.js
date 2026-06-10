@@ -1,12 +1,13 @@
 // Koristi middleware(autentikaciju), treba nam validan token da pristupimo ovim endpointima
 
-const router  = require('express').Router();
-const Message = require('../models/Message');
-const Chat = require('../models/Chat');
+const router             = require('express').Router();
+const Message            = require('../models/Message');
+const Chat               = require('../models/Chat');
+const { upload, uploadToCloudinary } = require('../middleware/upload');
 
 // GET /api/messages/:chatId — uhvati poruke iz chata
 router.get('/:chatId', async (req, res) => {
-  const me = req.user.username;
+  const me     = req.user.username;
   const chatId = req.params.chatId;
   const limit  = parseInt(req.query.limit) || 50;
   const before = req.query.before;
@@ -32,13 +33,14 @@ router.get('/:chatId', async (req, res) => {
   }
 });
 
-// POST /api/messages/:chatId — slanje poruke
-router.post('/:chatId', async (req, res) => {
-  const me     = req.user.username;
-  const chatId = req.params.chatId;
-  const { text = '', replyTo = null, files = [] } = req.body;
+// POST /api/messages/:chatId — slanje poruke, prima multipart/form-data umjesto base64
+router.post('/:chatId', upload.array('files', 10), async (req, res) => {
+  const me      = req.user.username;
+  const chatId  = req.params.chatId;
+  const text    = req.body.text || '';
+  const replyTo = req.body.replyTo ? JSON.parse(req.body.replyTo) : null;
 
-  if (!text.trim() && files.length === 0) {
+  if (!text.trim() && (!req.files || req.files.length === 0)) {
     return res.status(400).json({ ok: false, error: 'Message cannot be empty' });
   }
 
@@ -46,6 +48,29 @@ router.post('/:chatId', async (req, res) => {
     const chat = await Chat.findById(chatId);
     if (!chat || !chat.members.includes(me)) {
       return res.status(404).json({ ok: false, error: 'Chat not found' });
+    }
+
+    // Upload svaki fajl na Cloudinary i spremi URL
+    const files = [];
+    for (const file of (req.files || [])) {
+      const isVideo = file.mimetype.startsWith('video');
+      const isImage = file.mimetype.startsWith('image');
+      const resourceType = isVideo ? 'video' : isImage ? 'image' : 'raw';
+
+      const result = await uploadToCloudinary(file.buffer, {
+        folder:          'brzojav',
+        resource_type:   resourceType,
+        access_mode:     'public',
+        type:            'upload',
+        use_filename:    true,
+        unique_filename: true,
+      });
+
+      files.push({
+        fileType: isVideo ? 'video' : isImage ? 'image' : 'file',
+        url:      result.secure_url,
+        name:     file.originalname, // always the original name with extension
+      });
     }
 
     const message = await Message.create({
@@ -57,20 +82,20 @@ router.post('/:chatId', async (req, res) => {
     });
 
     // Update lastMessage preview na chat menuu
-    chat.lastMessage = text || (files.length ? '📎 File' : '');
+    chat.lastMessage   = text || (files.length ? '📎 File' : '');
     chat.lastMessageAt = new Date();
     await chat.save();
 
     return res.status(201).json({ ok: true, message });
   } catch (err) {
-    console.error('[messages] POST error:', err.message);
+    console.error('[messages] POST error:', err); // ← full error not just message
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
 
 // DELETE /api/messages/:messageId — izbriši poruku
 router.delete('/:messageId', async (req, res) => {
-  const me = req.user.username;
+  const me        = req.user.username;
   const messageId = req.params.messageId;
 
   try {
@@ -88,7 +113,7 @@ router.delete('/:messageId', async (req, res) => {
 
 // POST /api/messages/:messageId/react — dodaj emoji
 router.post('/:messageId/react', async (req, res) => {
-  const me = req.user.username;
+  const me        = req.user.username;
   const messageId = req.params.messageId;
   const { emoji } = req.body;
 
@@ -112,7 +137,7 @@ router.post('/:messageId/react', async (req, res) => {
 
 // DELETE /api/messages/:messageId/react — removeamo reaction
 router.delete('/:messageId/react', async (req, res) => {
-  const me = req.user.username;
+  const me        = req.user.username;
   const messageId = req.params.messageId;
 
   try {
