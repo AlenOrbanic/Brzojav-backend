@@ -12,6 +12,7 @@ const userSchema = new mongoose.Schema({
   allowStrangers: { type: Boolean, default: true },
   blockedUsers: [{ type: String }],
   createdAt: { type: Date, default: Date.now },
+  deleted: { type: Boolean, default: false },
 });
 
 module.exports = mongoose.model('User', userSchema);

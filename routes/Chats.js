@@ -30,7 +30,7 @@ router.get('/', async (req, res) => {
     const uniqueUsernames = [...new Set(dmUsernames)];
     const profiles = await User.find(
       { username: { $in: uniqueUsernames } },
-      'username name avatar lastSeen'
+      'username name avatar lastSeen showLastSeen phone deleted'
     );
     const profileMap = {};
     for (const p of profiles) profileMap[p.username] = p;
@@ -39,7 +39,7 @@ router.get('/', async (req, res) => {
     const allGroupMemberUsernames = [...new Set(groupChats.flatMap(c => c.members))];
     const groupMemberProfiles = await User.find(
       { username: { $in: allGroupMemberUsernames } },
-      'username name avatar lastSeen'
+      'username name avatar lastSeen showLastSeen deleted'
     );
 
     const memberMap = {};
@@ -64,23 +64,37 @@ router.get('/', async (req, res) => {
           name: chat.name,
           avatar: chat.avatar,
           ownerId: chat.ownerId,
-          members: chat.members.map(username => ({
-            username,
-            name:     memberMap[username]?.name     || username,
-            avatar:   memberMap[username]?.avatar   || '',
-            lastSeen: memberMap[username]?.lastSeen || null,
-            isOwner:  username === chat.ownerId,
-            isMe:     username === me,
-          })),
+          members: chat.members.map(username => {
+            const profile = memberMap[username];
+            const isDeleted = profile?.deleted === true;
+            return {
+              username,
+              name: isDeleted ? 'Deleted user' : (profile?.name || username),
+              avatar: isDeleted ? '' : (profile?.avatar || ''),
+              lastSeen: isDeleted ? null : (profile?.showLastSeen === false ? null : (profile?.lastSeen || null)),
+              isOwner: username === chat.ownerId,
+              isMe: username === me,
+              deleted: isDeleted,
+            };
+          }),
         };
       }
 
+      const otherUsername = chat.members.find(m => m !== me);
+      const otherProfile  = profileMap[otherUsername];
+      const otherDeleted  = otherProfile?.deleted === true;
       return {
         ...base,
-        otherUser: profileMap[chat.members.find(m => m !== me)] || null,
+        otherUser: otherProfile ? {
+          username: otherProfile.username,
+          name:     otherDeleted ? 'Deleted user' : otherProfile.name,
+          avatar:   otherDeleted ? '' : otherProfile.avatar,
+          lastSeen: otherDeleted ? null : (otherProfile.showLastSeen === false ? null : (otherProfile.lastSeen || null)),
+          phone:    otherDeleted ? '' : (otherProfile.phone || ''),
+          deleted:  otherDeleted,
+        } : null,
       };
     });
-
     return res.json({ ok: true, chats: result });
   } catch (err) {
     console.error('[chats] GET / error:', err.message);
@@ -107,7 +121,12 @@ router.post('/', async (req, res) => {
     if (!other) {
       return res.status(404).json({ ok: false, error: 'User not found' });
     }
-
+    if (other.deleted) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+    if (!other.allowStrangers) {
+      return res.status(403).json({ ok: false, error: 'This user does not accept messages from strangers' });
+    }
     // Look for existing DM chat between the two users
     const members = [me, username].sort();
     let chat = await Chat.findOne({ isGroup: false, members: { $all: members, $size: 2 } });
@@ -144,9 +163,19 @@ router.post('/group', async (req, res) => {
   }
 
   try {
-    // Always include creator
-    const allMembers = [...new Set([me, ...members])];
+    // Provjeri membere u bazi, ignoriraj one koji su obrisani ili ne postoje
+    const requested = [...new Set(members.filter(u => u && u !== me))];
+    const validUsers = await User.find(
+      { username: { $in: requested }, deleted: { $ne: true } },
+      'username'
+    );
+    const validUsernames = validUsers.map(u => u.username);
 
+    if (validUsernames.length < 2) {
+      return res.status(400).json({ ok: false, error: 'Need at least 2 valid members' });
+    }
+
+    const allMembers = [...new Set([me, ...validUsernames])];
     const chat = await Chat.create({
       members: allMembers,
       isGroup: true,
@@ -154,7 +183,7 @@ router.post('/group', async (req, res) => {
       ownerId: me,
     });
 
-    // Notify all members except creator so their sidebar updates instantly
+    //Obavijesti sve članove osim ownera da im se sidebar updatea
     const io          = req.app.get('io');
     const onlineUsers = req.app.get('onlineUsers');
     for (const member of allMembers) {

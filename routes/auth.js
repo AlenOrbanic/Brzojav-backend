@@ -2,7 +2,7 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-
+const Chat = require('../models/Chat');
 const JWT_SECRET = process.env.JWT_SECRET;
 
 router.post('/register', async (req, res) => {
@@ -68,7 +68,9 @@ router.post('/login', async (req, res) => {
     if (!user) {
       return res.status(400).json({ ok: false, error: 'Invalid credentials' });
     }
-
+    if (user.deleted) {
+      return res.status(400).json({ ok: false, error: 'Invalid credentials' });
+    }
     // Check password
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
@@ -173,7 +175,7 @@ router.post('/block', authMiddleware, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
-
+//Change password
 router.patch('/password', authMiddleware, async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   if (!oldPassword || !newPassword) {
@@ -192,5 +194,61 @@ router.patch('/password', authMiddleware, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
+// DELETE /api/auth/me — soft-delete current account
+router.delete('/me', authMiddleware, async (req, res) => {
+  try {
+    const me = req.user.username;
+    const user = await User.findOne({ username: me });
+    if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+    if (user.deleted) return res.json({ ok: true }); // idempotent
 
+    user.deleted = true;
+    user.name = 'Deleted User';
+    user.username = `deleted_${user._id}`;
+    user.email = `deleted_${user._id}@deleted.local`;
+    user.phone = '';
+    user.avatar = '';
+    user.password = 'deleted';
+    user.blockedUsers = [];
+    user.allowStrangers = false;
+    user.showLastSeen = false;
+    user.lastSeen = null;
+    await user.save();
+
+    //Ownership transfer
+    const ownedGroups = await Chat.find({ isGroup: true, ownerId: me });
+    for (const g of ownedGroups) {
+      const others = g.members.filter(m => m !== me);
+      if (others.length === 0) {
+        await g.deleteOne();
+      } else {
+        g.ownerId = others[0];
+        await g.save();
+      }
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[auth] DELETE /me error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+// PATCH /api/auth/me — update profile settings
+router.patch('/me', authMiddleware, async (req, res) => {
+  try {
+    const allowed = ['name', 'username', 'email', 'phone', 'avatar', 'showLastSeen', 'allowStrangers', 'blockedUsers'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    const user = await User.findOneAndUpdate(
+      { username: req.user.username },
+      { $set: updates },
+      { new: true }
+    );
+    return res.json({ ok: true, user });
+  } catch (err) {
+    console.error('[auth] PATCH /me error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
 module.exports = router;
