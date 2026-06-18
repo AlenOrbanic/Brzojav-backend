@@ -3,6 +3,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Chat = require('../models/Chat');
+const Message = require('../models/Message');
+const UserChat = require('../models/UserChat');
 const JWT_SECRET = process.env.JWT_SECRET;
 
 router.post('/register', async (req, res) => {
@@ -194,7 +196,7 @@ router.patch('/password', authMiddleware, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
-// DELETE /api/auth/me — soft-delete current account
+// DELETE /api/auth/me — soft-delete current account + free up the username
 router.delete('/me', authMiddleware, async (req, res) => {
   try {
     const me = req.user.username;
@@ -202,20 +204,9 @@ router.delete('/me', authMiddleware, async (req, res) => {
     if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
     if (user.deleted) return res.json({ ok: true }); // idempotent
 
-    user.deleted = true;
-    user.name = 'Deleted User';
-    user.username = `deleted_${user._id}`;
-    user.email = `deleted_${user._id}@deleted.local`;
-    user.phone = '';
-    user.avatar = '';
-    user.password = 'deleted';
-    user.blockedUsers = [];
-    user.allowStrangers = false;
-    user.showLastSeen = false;
-    user.lastSeen = null;
-    await user.save();
+    const tombstone = `deleted_${user._id}`;
 
-    //Ownership transfer
+    //Transfer ownership grupe
     const ownedGroups = await Chat.find({ isGroup: true, ownerId: me });
     for (const g of ownedGroups) {
       const others = g.members.filter(m => m !== me);
@@ -226,6 +217,35 @@ router.delete('/me', authMiddleware, async (req, res) => {
         await g.save();
       }
     }
+
+    // Rewriteaj username u svim chatovima gdje se pojavljuje
+    await Chat.updateMany(
+      { members: me },
+      { $set: { 'members.$[el]': tombstone } },
+      { arrayFilters: [{ el: me }] }
+    );
+
+    await Chat.updateMany({ ownerId: me }, { $set: { ownerId: tombstone } });
+    await Message.updateMany({ sender: me }, { $set: { sender: tombstone } });
+    await UserChat.updateMany({ username: me }, { $set: { username: tombstone } });
+    await User.updateMany(
+      { blockedUsers: me },
+      { $pull: { blockedUsers: me } }
+    );
+    
+    user.username       = tombstone;
+    user.deleted        = true;
+    user.name           = 'Deleted user';
+    user.email          = `deleted_${user._id}@deleted.local`; // keeps unique-index happy
+    user.phone          = '';
+    user.avatar         = '';
+    user.password       = 'deleted';      // bcrypt.compare against this will always fail
+    user.blockedUsers   = [];
+    user.allowStrangers = false;
+    user.showLastSeen   = false;
+    user.lastSeen       = null;
+    await user.save();
+
     return res.json({ ok: true });
   } catch (err) {
     console.error('[auth] DELETE /me error:', err.message);
