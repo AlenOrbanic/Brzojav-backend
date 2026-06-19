@@ -6,7 +6,7 @@ const fetch    = require('node-fetch'); // HTTP requests to other nodes
 const registry = require('./registry');
 const peers    = require('./peers');
 
-const GOSSIP_INTERVAL = parseInt(process.env.GOSSIP_INTERVAL_MS) || 30_000;
+const GOSSIP_INTERVAL = parseInt(process.env.GOSSIP_INTERVAL_MS, 10) || 30_000;
 const SELF_URL = process.env.SELF_URL || `http://localhost:${process.env.PORT || 3000}`;
 const NODE_ID = process.env.NODE_ID  || `node-${process.env.PORT || 3000}`;
 const REQUEST_TIMEOUT = 5_000; // 5 s per peer
@@ -25,7 +25,10 @@ async function syncToPeer(peer) {
   try {
     const res = await fetch(`${peer.url}/api/sync`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type':   'application/json',
+        'X-Node-Secret':  process.env.NODE_SECRET || '',
+      },
       body:    JSON.stringify(body),
       signal:  controller.signal,
     });
@@ -51,7 +54,8 @@ async function syncToPeer(peer) {
 }
 
 async function gossipRound() {
-  const targets = peers.othersExcept(SELF_URL);
+  // Probaj sve peerove (osim sebe) — i nezdrave, kako bi se mogli oporaviti
+  const targets = peers.list().filter(p => p.url !== SELF_URL);
   if (targets.length === 0) return;
 
   console.log(`[gossip] Syncing with ${targets.length} peer(s)…`);
@@ -59,6 +63,8 @@ async function gossipRound() {
 }
 
 // Synca sve peerove odjednom
-setInterval(gossipRound, GOSSIP_INTERVAL);
+function start() {
+  setInterval(gossipRound, GOSSIP_INTERVAL);
+}
 
-module.exports = { gossipRound, syncToPeer };
+module.exports = { gossipRound, start };

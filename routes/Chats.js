@@ -294,7 +294,9 @@ router.post('/:id/kick', async (req, res) => {
     if (!chat) return res.status(404).json({ ok: false, error: 'Chat not found' });
     if (chat.ownerId !== me) return res.status(403).json({ ok: false, error: 'Only the owner can kick members' });
     if (!username || username === me) return res.status(400).json({ ok: false, error: 'Invalid username' });
-
+    if (!chat.members.includes(username)) {
+      return res.status(404).json({ ok: false, error: 'User is not in this chat' });
+    }
     chat.members = chat.members.filter(m => m !== username);
     await chat.save();
     await UserChat.deleteOne({ username, chatId });

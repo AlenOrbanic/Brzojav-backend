@@ -1,10 +1,9 @@
 /**
  * registry.js
- * 
+ *
  * In-memory lookup table: username -> { ip, port, lastSeen, nodeId }
  * Svaki seed node drži svoju kopiju. Nodeovi međusobno "gossipaju" tako da svaki node
- * ima potpunu sliku nodeova
- * so that over time every node converges to a full picture of the network.
+ * ima potpunu sliku nodeova.
  */
 
 const store = new Map(); // Map<username, UserRecord>
@@ -46,14 +45,16 @@ function merge(records) {
       // node si dodaje novog usera
       store.set(key, { ...incoming, username: key });
       updated++;
-    } else if (incoming.ip !== existing.ip || incoming.p2pPort !== existing.p2pPort) {
-      // nešto se promjenilo, updateamo usera
+    } else if (incoming.lastSeen > existing.lastSeen &&
+               (incoming.ip !== existing.ip || incoming.p2pPort !== existing.p2pPort)) {
+      // noviji zapis s drugacijim IP-em/portom — updateamo usera
       store.set(key, { ...incoming, username: key });
       updated++;
-    } else {
+    } else if (incoming.lastSeen > existing.lastSeen) {
       // samo se last seen promjenio, updateamo timestamp bez povećavanja broja mergeanih zapisa
       existing.lastSeen = incoming.lastSeen;
     }
+    // stariji zapis — ignoriramo (LWW)
   }
   return updated;
 }
@@ -77,9 +78,11 @@ function count() {
 }
 
 // Svake dvije minute provjeri ttl
-setInterval(() => {
-  const n = purgeStale();
-  if (n > 0) console.log(`[registry] Purged ${n} stale record(s)`);
-}, 2 * 60 * 1000);
+function start() {
+  setInterval(() => {
+    const n = purgeStale();
+    if (n > 0) console.log(`[registry] Purged ${n} stale record(s)`);
+  }, 2 * 60 * 1000);
+}
 
-module.exports = { register, lookup, remove, all, merge, count, purgeStale };
+module.exports = { register, lookup, remove, all, merge, count, purgeStale, start };

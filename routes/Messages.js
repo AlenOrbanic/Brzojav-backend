@@ -5,11 +5,22 @@ const Message            = require('../models/Message');
 const Chat               = require('../models/Chat');
 const { upload, uploadToCloudinary } = require('../middleware/upload');
 
+// Ovo nam treba nakon brisanja poruke, inače moze stari message ostati kao preview
+async function refreshLastMessage(chat) {
+  const latest = await Message.findOne({ chatId: chat._id }).sort({ createdAt: -1 });
+  chat.lastMessage   = latest
+    ? (latest.text || (latest.files?.length ? '📎 File' : ''))
+    : '';
+  chat.lastMessageAt = latest ? latest.createdAt : chat.createdAt;
+  await chat.save();
+  return chat;
+}
+
 // GET /api/messages/:chatId — uhvati poruke iz chata
 router.get('/:chatId', async (req, res) => {
   const me     = req.user.username;
   const chatId = req.params.chatId;
-  const limit  = parseInt(req.query.limit) || 50;
+  const limit  = parseInt(req.query.limit, 10) || 50;
   const before = req.query.before;
 
   try {
@@ -34,10 +45,15 @@ router.get('/:chatId', async (req, res) => {
 });
 
 router.post('/:chatId', upload.array('files', 10), async (req, res) => {
-  const me      = req.user.username;
-  const chatId  = req.params.chatId;
-  const text    = req.body.text || '';
-  const replyTo = req.body.replyTo ? JSON.parse(req.body.replyTo) : null;
+  const me = req.user.username;
+  const chatId = req.params.chatId;
+  const text = req.body.text || '';
+
+  let replyTo = null;
+  if (req.body.replyTo) {
+    try { replyTo = JSON.parse(req.body.replyTo); }
+    catch { return res.status(400).json({ ok: false, error: 'Invalid replyTo' }); }
+  }
 
   if (!text.trim() && (!req.files || req.files.length === 0)) {
     return res.status(400).json({ ok: false, error: 'Message cannot be empty' });
@@ -50,9 +66,8 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
     }
 
     // Upload svaki fajl na Cloudinary i spremi URL
-    const files = [];
-    for (const file of (req.files || [])) {
-      const isVideo  = file.mimetype.startsWith('video');
+    const files = await Promise.all((req.files || []).map(async file => {
+      const isVideo = file.mimetype.startsWith('video');
       const isImage = file.mimetype.startsWith('image');
       const resourceType = isVideo ? 'video' : isImage ? 'image' : 'raw';
 
@@ -65,12 +80,12 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
         unique_filename: true,
       });
 
-      files.push({
+      return {
         fileType: isVideo ? 'video' : isImage ? 'image' : 'file',
         url:      result.secure_url,
         name:     file.originalname,
-      });
-    }
+      };
+    }));
 
     const message = await Message.create({
       chatId,
@@ -91,27 +106,27 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
 
     for (const member of chat.members) {
       if (member === me) continue;
-      const socketId = onlineUsers.get(member);
-      if (socketId) {
-        io.to(socketId).emit('new_message', {
-          chatId:  chatId.toString(),
-          message: {
-            id:        message._id,
-            sender:    me,
-            text:      message.text,
-            files:     message.files,
-            replyTo:   message.replyTo,
-            reactions: message.reactions,
-            time:      message.createdAt,
-          },
-        });
+      const socketId = onlineUsers?.get(member);
+      if (!socketId) continue;
 
-        // Refresh chat sidebar
-        io.to(socketId).emit('chat_updated', {
-          chatId: chatId.toString(),
-          lastMessage: chat.lastMessage,
-        });
-      }
+      io.to(socketId).emit('new_message', {
+        chatId:  chatId.toString(),
+        message: {
+          id:        message._id,
+          sender:    me,
+          text:      message.text,
+          files:     message.files,
+          replyTo:   message.replyTo,
+          reactions: message.reactions,
+          time:      message.createdAt,
+        },
+      });
+
+      // Refresh chat sidebar
+      io.to(socketId).emit('chat_updated', {
+        chatId:      chatId.toString(),
+        lastMessage: chat.lastMessage,
+      });
     }
 
     return res.status(201).json({ ok: true, message });
@@ -131,13 +146,56 @@ router.delete('/:messageId', async (req, res) => {
     if (!message) return res.status(404).json({ ok: false, error: 'Message not found' });
     if (message.sender !== me) return res.status(403).json({ ok: false, error: 'Not your message' });
 
+    const chat = await Chat.findById(message.chatId);
     await message.deleteOne();
+
+    // moze ostati stara poruka kao preview u sidebaru
+    if (chat && chat.lastMessageAt && message.createdAt &&
+        chat.lastMessageAt.getTime() === message.createdAt.getTime()) {
+      await refreshLastMessage(chat);
+
+      // Sidebar update ostalim clanovima
+      const io          = req.app.get('io');
+      const onlineUsers = req.app.get('onlineUsers');
+      for (const member of chat.members) {
+        if (member === me) continue;
+        const socketId = onlineUsers?.get(member);
+        if (socketId) {
+          io.to(socketId).emit('chat_updated', {
+            chatId:      chat._id.toString(),
+            lastMessage: chat.lastMessage,
+          });
+        }
+      }
+    }
+
     return res.json({ ok: true });
   } catch (err) {
     console.error('[messages] DELETE error:', err.message);
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
+
+// Pokazi novi reaction svim drugim članovima chata
+async function broadcastReactions(req, message) {
+  const chat = await Chat.findById(message.chatId);
+  if (!chat) return;
+  const io          = req.app.get('io');
+  const onlineUsers = req.app.get('onlineUsers');
+  const me          = req.user.username;
+
+  for (const member of chat.members) {
+    if (member === me) continue;
+    const socketId = onlineUsers?.get(member);
+    if (socketId) {
+      io.to(socketId).emit('message_reactions', {
+        chatId:    chat._id.toString(),
+        messageId: message._id.toString(),
+        reactions: message.reactions,
+      });
+    }
+  }
+}
 
 // POST /api/messages/:messageId/react — dodaj emoji
 router.post('/:messageId/react', async (req, res) => {
@@ -155,6 +213,8 @@ router.post('/:messageId/react', async (req, res) => {
     message.reactions = message.reactions.filter(r => r.sender !== me);
     message.reactions.push({ emoji, sender: me });
     await message.save();
+
+    await broadcastReactions(req, message);
 
     return res.json({ ok: true, reactions: message.reactions });
   } catch (err) {
@@ -174,6 +234,8 @@ router.delete('/:messageId/react', async (req, res) => {
 
     message.reactions = message.reactions.filter(r => r.sender !== me);
     await message.save();
+
+    await broadcastReactions(req, message);
 
     return res.json({ ok: true, reactions: message.reactions });
   } catch (err) {

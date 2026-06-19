@@ -7,7 +7,7 @@ const registry = require('../registry');
 const peers    = require('../peers');
 
 router.post('/', (req, res) => {
-  const { fromNode, fromUrl, records } = req.body;
+  const { fromNode, records } = req.body;
 
   if (!Array.isArray(records)) {
     return res.status(400).json({ ok: false, error: 'records must be an array' });

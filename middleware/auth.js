@@ -1,12 +1,15 @@
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('[auth-middleware] JWT_SECRET env var je obavezan');
+}
 
 module.exports = function authMiddleware(req, res, next) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const [scheme, token] = (authHeader || '').split(' ');
 
-  if (!token) {
+  if (scheme !== 'Bearer' || !token) {
     return res.status(401).json({ ok: false, error: 'No token, access denied' });
   }
 
@@ -15,6 +18,10 @@ module.exports = function authMiddleware(req, res, next) {
     req.user = decoded;
     next(); // token je validan, nastavi
   } catch (err) {
-    return res.status(401).json({ ok: false, error: 'Invalid or expired token' });
+    const expired = err.name === 'TokenExpiredError';
+    return res.status(401).json({
+      ok:    false,
+      error: expired ? 'Session expired' : 'Invalid token',
+    });
   }
 };

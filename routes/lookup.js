@@ -8,33 +8,32 @@ const fetch    = require('node-fetch');
 const registry = require('../registry');
 const peers    = require('../peers');
 
-const NODE_ID        = process.env.NODE_ID  || `node-${process.env.PORT || 3000}`;
-const SELF_URL       = process.env.SELF_URL || `http://localhost:${process.env.PORT || 3000}`;
+const NODE_ID         = process.env.NODE_ID  || `node-${process.env.PORT || 3000}`;
 const REQUEST_TIMEOUT = 5_000;
+const MAX_VISITED     = 50; // gornji limit kako client ne bi spamao ogroman visited string
 
 router.get('/:username', async (req, res) => {
   const username = req.params.username.toLowerCase().trim();
 
   // Zaustavimo ponovno posjećivanje istih nodeova
   const visitedParam = req.query.visited || '';
-  const visited = new Set(visitedParam ? visitedParam.split(',') : []);
-  visited.add(NODE_ID); // Označimo naš node kao visited
+  const visitedList  = visitedParam ? visitedParam.split(',').slice(0, MAX_VISITED) : [];
+  const visited      = new Set(visitedList);
+  visited.add(NODE_ID); // označi naš node kao posjećen
 
   // Provjeri prvo lokalno — ako imamo usera, nema potrebe da gubimo vrijeme na druge nodeove
   const local = registry.lookup(username);
   if (local) {
     console.log(`[lookup] Found ${username} locally on ${NODE_ID}`);
     return res.json({
-      ok:       true,
-      record:   local,
-      foundOn:  NODE_ID,
+      ok:      true,
+      record:  local,
+      foundOn: NODE_ID,
     });
   }
 
   // Filtriraj koje nodeove pitati za usera
-  const targets = peers
-    .healthy()
-    .filter(p => p.url !== SELF_URL && !visited.has(p.id));
+  const targets = peers.healthy().filter(p => !visited.has(p.id));
 
   if (targets.length === 0) {
     console.log(`[lookup] ${username} not found anywhere (no more peers to ask)`);
@@ -51,7 +50,12 @@ router.get('/:username', async (req, res) => {
   // Istovremeno pitaj ostale peerove, vrati prvi pozitivan odgovor (ako postoji)
   const result = await Promise.any(
     targets.map(peer => forwardLookup(peer, username, visitedStr))
-  ).catch(() => null);
+  ).catch(err => {
+    // Svi peerovi su pali — logiraj zašto da ne ostanemo bez info-a
+    const reasons = err.errors?.map(e => e.message).join(' | ') || err.message;
+    console.warn(`[lookup] all peers failed for "${username}": ${reasons}`);
+    return null;
+  });
 
   if (result) {
     return res.json(result);
@@ -72,9 +76,14 @@ async function forwardLookup(peer, username, visitedStr) {
     const url = `${peer.url}/api/lookup/${encodeURIComponent(username)}?visited=${encodeURIComponent(visitedStr)}`;
     const res = await fetch(url, { signal: controller.signal });
 
-    peers.setHealth(peer.id, res.ok || res.status === 404);
+    if (!res.ok) {
+      // 404 znaci "node radi ali nema usera", jos uvijek zdrav
+      // Bilo sto drugo (500, 502...), unhealthy
+      peers.setHealth(peer.id, res.status === 404);
+      throw new Error(`${peer.id} returned ${res.status}`);
+    }
 
-    if (!res.ok) throw new Error(`${peer.id} returned ${res.status}`);
+    peers.setHealth(peer.id, true);
 
     const data = await res.json();
     if (!data.ok) throw new Error('not found on peer');
@@ -82,7 +91,8 @@ async function forwardLookup(peer, username, visitedStr) {
     console.log(`[lookup] Got answer from ${peer.id} for user ${username}`);
     return data;
   } catch (err) {
-    if (err.name !== 'AbortError') {
+    // 404 smo već označili kao healthy gore, pa ovdje ne diramo health za njega
+    if (!err.message?.includes('returned 404')) {
       peers.setHealth(peer.id, false);
     }
     throw err;

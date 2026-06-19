@@ -34,4 +34,4 @@ function othersExcept(selfUrl) {
   return healthy().filter(p => p.url !== selfUrl);
 }
 
-module.exports = { SEED_NODES, list, healthy, setHealth, othersExcept };
+module.exports = { list, healthy, setHealth, othersExcept };

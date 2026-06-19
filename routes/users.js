@@ -10,7 +10,7 @@ const router   = require('express').Router();
 const registry = require('../registry');
 const gossip   = require('../gossip');
 
-const NODE_ID = process.env.NODE_ID || `node-${process.env.PORT || 3000}`;
+const NODE_ID = process.env.NODE_ID || `node-${process.env.PORT || 3001}`;
 
 router.post('/register', (req, res) => {
   const { username, p2pPort } = req.body;
@@ -28,14 +28,14 @@ router.post('/register', (req, res) => {
   const record = registry.register(
     username.trim().toLowerCase(),
     ip,
-    parseInt(p2pPort) || 9000,
+    parseInt(p2pPort, 10) || 9000,
     NODE_ID,
   );
 
   console.log(`[users] Registered: ${record.username} @ ${ip}:${record.p2pPort}`);
 
   // Odmah nakon registracije šaljemo gossip nodeovima da se ažuriraju
-  gossip.gossipRound().catch(() => {});
+  gossip.gossipRound().catch(err => console.warn('[users] gossip failed:', err.message));
 
   return res.json({ ok: true, record });
 });
