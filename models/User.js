@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema({
   lastSeen: { type: Date, default: Date.now },
   showLastSeen: { type: Boolean, default: true },
   allowStrangers: { type: Boolean, default: true },
+  notificationsEnabled: { type: Boolean, default: true },
   blockedUsers: [{ type: String }],
   createdAt: { type: Date, default: Date.now },
   deleted: { type: Boolean, default: false },

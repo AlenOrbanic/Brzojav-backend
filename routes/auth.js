@@ -22,6 +22,7 @@ function publicUser(user) {
     createdAt:      user.createdAt,
     showLastSeen:   user.showLastSeen,
     allowStrangers: user.allowStrangers,
+    notificationsEnabled: user.notificationsEnabled,
   };
 }
 
@@ -122,7 +123,7 @@ router.patch('/me', authMiddleware, async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Please enter a valid email address' });
   }
 
-  const allowed = ['name', 'email', 'phone', 'avatar', 'showLastSeen', 'allowStrangers'];
+  const allowed = ['name', 'email', 'phone', 'avatar', 'showLastSeen', 'allowStrangers', 'notificationsEnabled'];
   const updates = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
