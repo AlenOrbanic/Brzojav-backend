@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema({
   showLastSeen: { type: Boolean, default: true },
   allowStrangers: { type: Boolean, default: true },
   notificationsEnabled: { type: Boolean, default: true },
+  theme: { type: String, enum: ['light', 'dark'], default: 'light' },
   blockedUsers: [{ type: String }],
   createdAt: { type: Date, default: Date.now },
   deleted: { type: Boolean, default: false },
