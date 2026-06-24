@@ -6,6 +6,21 @@ const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const UserChat = require('../models/UserChat');
 const authMiddleware = require('../middleware/auth');
+const rateLimit = require('express-rate-limit');
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max:      10,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { ok: false, error: 'Too many login attempts, try again later' },
+});
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max:      5,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { ok: false, error: 'Too many accounts created from this IP, try again later' },
+});
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   throw new Error('[auth] JWT_SECRET env var je obavezan');
@@ -30,7 +45,7 @@ function publicUser(user) {
 // POST /api/auth/register
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
   const { username, email, password, phone } = req.body;
   const normalizedUsername = username.trim().toLowerCase();
   const normalizedEmail = email.trim().toLowerCase();
@@ -71,7 +86,7 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { identifier, password } = req.body; // identifier = username ili email
 
   if (!identifier || !password) {
