@@ -46,6 +46,18 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   onlineUsers.set(socket.username, socket.id);
 
+  // Klijenti razmjenjuju SDP/ICE preko ovog kanala da bi otvorili DataChannel
+  // Server samo prosljedjuje paket — ne čita ni ne sprema sadrzaj
+  socket.on('webrtc-signal', ({ to, data }) => {
+    if (!to) return;
+    const targetSocketId = onlineUsers.get(to);
+    if (!targetSocketId) return; // peer offline, klijent ce fallbackati na server
+    io.to(targetSocketId).emit('webrtc-signal', {
+      from: socket.username,
+      data,
+    });
+  });
+
   socket.on('disconnect', () => {
     if (socket.username) onlineUsers.delete(socket.username);
   });

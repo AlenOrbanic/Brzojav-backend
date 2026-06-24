@@ -48,6 +48,8 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
   const me = req.user.username;
   const chatId = req.params.chatId;
   const text = req.body.text || '';
+  // Client ID — koristi se za deduplikaciju ako je poruka već stigla preko P2P DataChannela
+  const clientId = req.body.clientId || null;
 
   let replyTo = null;
   if (req.body.replyTo) {
@@ -104,22 +106,17 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
     const io          = req.app.get('io');
     const onlineUsers = req.app.get('onlineUsers');
 
+    // koristi isključivo za signaling + notifikacije, ne kao message relay.
     for (const member of chat.members) {
       if (member === me) continue;
       const socketId = onlineUsers?.get(member);
       if (!socketId) continue;
 
       io.to(socketId).emit('new_message', {
-        chatId:  chatId.toString(),
-        message: {
-          id:        message._id,
-          sender:    me,
-          text:      message.text,
-          files:     message.files,
-          replyTo:   message.replyTo,
-          reactions: message.reactions,
-          time:      message.createdAt,
-        },
+        chatId:    chatId.toString(),
+        messageId: message._id.toString(),
+        clientId,  // za dedupe ako je P2P već dostavio
+        sender:    me,
       });
 
       // Refresh chat sidebar
@@ -129,7 +126,7 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
       });
     }
 
-    return res.status(201).json({ ok: true, message });
+    return res.status(201).json({ ok: true, message, clientId });
   } catch (err) {
     console.error('[messages] POST error:', err);
     return res.status(500).json({ ok: false, error: 'Server error' });
