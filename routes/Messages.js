@@ -3,6 +3,7 @@
 const router             = require('express').Router();
 const Message            = require('../models/Message');
 const Chat               = require('../models/Chat');
+const UserChat           = require('../models/UserChat');
 const { upload, uploadToCloudinary } = require('../middleware/upload');
 
 // Ovo nam treba nakon brisanja poruke, inače moze stari message ostati kao preview
@@ -101,6 +102,12 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
     chat.lastMessage   = text || (files.length ? '📎 File' : '');
     chat.lastMessageAt = new Date();
     await chat.save();
+    
+    await UserChat.findOneAndUpdate(
+      { username: me, chatId },
+      { $set: { lastReadAt: new Date() } },
+      { upsert: true }
+    );
 
     // Svim drugim chat memberima pošalji novu poruku
     const io          = req.app.get('io');
@@ -185,10 +192,9 @@ async function broadcastReactions(req, message) {
     if (member === me) continue;
     const socketId = onlineUsers?.get(member);
     if (socketId) {
-      io.to(socketId).emit('message_reactions', {
+      io.to(socketId).emit('reactions_updated', {
         chatId:    chat._id.toString(),
         messageId: message._id.toString(),
-        reactions: message.reactions,
       });
     }
   }

@@ -8,6 +8,7 @@ const userChatSchema = new mongoose.Schema({
   nickname: { type: String, default: '' }, // nadimak za chat (vidi se samo toj osobi)
   pinned: { type: Boolean, default: false },
   muted: { type: Boolean, default: false },
+  lastReadAt: { type: Date, default: null }, // kada je user zadnji put otvorio chat
 });
 
 // svaki user može imati samo jedne settinge po chatId-u

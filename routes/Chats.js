@@ -56,6 +56,7 @@ router.get('/', async (req, res) => {
         pinned: settings.pinned || false,
         muted: settings.muted || false,
         nickname: settings.nickname || '',
+        lastReadAt: settings.lastReadAt || null,
       };
 
       if (chat.isGroup) {
@@ -311,6 +312,28 @@ router.post('/:id/kick', async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error('[chats] POST /kick error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+// POST /api/chats/:id/read — označi chat kao pročitan (postavi lastReadAt = now)
+router.post('/:id/read', async (req, res) => {
+  const me = req.user.username;
+  const chatId = req.params.id;
+  try {
+    const chat = await Chat.findById(chatId);
+    if (!chat || !chat.members.includes(me)) {
+      return res.status(404).json({ ok: false, error: 'Chat not found' });
+    }
+    const now = new Date();
+    await UserChat.findOneAndUpdate(
+      { username: me, chatId },
+      { $set: { lastReadAt: now } },
+      { upsert: true, new: true }
+    );
+    return res.json({ ok: true, lastReadAt: now });
+  } catch (err) {
+    console.error('[chats] POST /:id/read error:', err.message);
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
