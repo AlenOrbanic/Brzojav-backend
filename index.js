@@ -108,8 +108,8 @@ app.use('/api/auth',     require('./routes/auth'));
 app.use('/api/links', authMiddleware, require('./routes/links'));
 
 // Zahtjevaju autentikaciju (token)
-app.use('/api/messages', authMiddleware, require('./routes/messages'));
-app.use('/api/chats',    authMiddleware, require('./routes/chats'));
+app.use('/api/Messages', authMiddleware, require('./routes/messages'));
+app.use('/api/Chats',    authMiddleware, require('./routes/chats'));
 // Health check
 app.get('/', (req, res) => {
   res.json({
