@@ -23,6 +23,36 @@ router.get('/', async (req, res) => {
       settingsMap[uc.chatId.toString()] = uc;
     }
 
+    // Blokirani useri gledatelja — njihove poruke ne smiju biti u previewu
+    const meUser  = await User.findOne({ username: me }, 'blockedUsers');
+    const blocked = new Set(meUser?.blockedUsers || []);
+
+    // Ako je zadnju poruku poslao blokirani user, nadji zadnju poruku
+    // koju NIJE poslao blokirani user — ona ide u preview umjesto nje.
+    const previewOverride = {};
+    if (blocked.size) {
+      const blockedArr = Array.from(blocked);
+      for (const c of chats) {
+        if (c.lastMessageSender && blocked.has(c.lastMessageSender)) {
+          const alt = await Message.findOne({
+            chatId: c._id,
+            sender: { $nin: blockedArr },
+          }).sort({ createdAt: -1 });
+          previewOverride[c._id.toString()] = alt
+            ? { text: alt.text || (alt.files?.length ? '📎 File' : ''), sender: alt.sender }
+            : { text: '', sender: '' };
+        }
+      }
+    }
+
+    // Resolve dijeljene pinane poruke (jedna po chatu)
+    const pinnedIds = chats.map(c => c.pinnedMessageId).filter(Boolean);
+    const pinnedMap = {};
+    if (pinnedIds.length) {
+      const pinnedMsgs = await Message.find({ _id: { $in: pinnedIds } });
+      for (const m of pinnedMsgs) pinnedMap[m._id.toString()] = m;
+    }
+
     const dmUsernames = chats
       .filter(c => !c.isGroup)
       .flatMap(c => c.members.filter(m => m !== me));
@@ -47,16 +77,26 @@ router.get('/', async (req, res) => {
 
     const result = chats.map(chat => {
       const settings = settingsMap[chat._id.toString()] || {};
+      const ov = previewOverride[chat._id.toString()];
+      const pinnedMsg = chat.pinnedMessageId ? pinnedMap[chat.pinnedMessageId.toString()] : null;
       const base = {
         id: chat._id,
         isGroup: chat.isGroup,
         members: chat.members,
-        lastMessage: chat.lastMessage,
+        lastMessage: ov ? ov.text : chat.lastMessage,
+        lastMessageSender: ov ? ov.sender : (chat.lastMessageSender || ''),
         lastMessageAt: chat.lastMessageAt,
         pinned: settings.pinned || false,
         muted: settings.muted || false,
         nickname: settings.nickname || '',
         lastReadAt: settings.lastReadAt || null,
+        pinnedMessageId: chat.pinnedMessageId ? chat.pinnedMessageId.toString() : null,
+        pinnedMessage: pinnedMsg ? {
+          id:       pinnedMsg._id.toString(),
+          text:     pinnedMsg.text || (pinnedMsg.files?.length ? '📎 File' : ''),
+          sender:   pinnedMsg.sender,
+          pinnedBy: chat.pinnedBy || '',
+        } : null,
       };
 
       if (chat.isGroup) {
@@ -334,6 +374,62 @@ router.post('/:id/read', async (req, res) => {
     return res.json({ ok: true, lastReadAt: now });
   } catch (err) {
     console.error('[chats] POST /:id/read error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+// POST /api/chats/:id/pin-message — pinaj/odpinaj poruku (dijeljeno za sve članove)
+router.post('/:id/pin-message', async (req, res) => {
+  const me = req.user.username;
+  const chatId = req.params.id;
+  const { messageId } = req.body; // messageId za pin, null/prazno za unpin
+
+  try {
+    const chat = await Chat.findById(chatId);
+    if (!chat || !chat.members.includes(me)) {
+      return res.status(404).json({ ok: false, error: 'Chat not found' });
+    }
+
+    let snapshot = null;
+    if (messageId) {
+      const msg = await Message.findById(messageId);
+      if (!msg || msg.chatId.toString() !== chatId.toString()) {
+        return res.status(404).json({ ok: false, error: 'Message not found in this chat' });
+      }
+      chat.pinnedMessageId = msg._id;
+      chat.pinnedBy = me;
+      snapshot = {
+        id:       msg._id.toString(),
+        text:     msg.text || (msg.files?.length ? '📎 File' : ''),
+        sender:   msg.sender,
+        pinnedBy: me,
+      };
+    } else {
+      chat.pinnedMessageId = null;
+      chat.pinnedBy = '';
+    }
+    await chat.save();
+
+    // Obavijesti sve druge članove u realnom vremenu
+    const io          = req.app.get('io');
+    const onlineUsers = req.app.get('onlineUsers');
+    for (const member of chat.members) {
+      if (member === me) continue;
+      const socketId = onlineUsers?.get(member);
+      if (socketId) {
+        io.to(socketId).emit('chat_pinned', {
+          chatId:    chatId.toString(),
+          messageId: messageId || null,
+          text:      snapshot ? snapshot.text : '',
+          sender:    snapshot ? snapshot.sender : '',
+          by:        snapshot ? me : '',
+        });
+      }
+    }
+
+    return res.json({ ok: true, pinnedMessage: snapshot });
+  } catch (err) {
+    console.error('[chats] POST /:id/pin-message error:', err.message);
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });

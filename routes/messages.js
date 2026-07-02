@@ -12,6 +12,7 @@ async function refreshLastMessage(chat) {
   chat.lastMessage   = latest
     ? (latest.text || (latest.files?.length ? '📎 File' : ''))
     : '';
+  chat.lastMessageSender = latest ? latest.sender : '';
   chat.lastMessageAt = latest ? latest.createdAt : chat.createdAt;
   await chat.save();
   return chat;
@@ -100,6 +101,7 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
 
     // Update lastMessage preview na chat menuu
     chat.lastMessage   = text || (files.length ? '📎 File' : '');
+    chat.lastMessageSender = me;
     chat.lastMessageAt = new Date();
     await chat.save();
     
@@ -110,7 +112,7 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
     );
 
     // Svim drugim chat memberima pošalji novu poruku
-    const io          = req.app.get('io');
+    const io = req.app.get('io');
     const onlineUsers = req.app.get('onlineUsers');
 
     // koristi isključivo za signaling + notifikacije, ne kao message relay.
@@ -130,6 +132,7 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
       io.to(socketId).emit('chat_updated', {
         chatId:      chatId.toString(),
         lastMessage: chat.lastMessage,
+        lastMessageSender: me,
       });
     }
 
@@ -153,14 +156,32 @@ router.delete('/:messageId', async (req, res) => {
     const chat = await Chat.findById(message.chatId);
     await message.deleteOne();
 
+    const io          = req.app.get('io');
+    const onlineUsers = req.app.get('onlineUsers');
+
+    // Ako je obrisana poruka bila pinana, makni pin i obavijesti sve članove
+    if (chat && chat.pinnedMessageId &&
+        chat.pinnedMessageId.toString() === messageId.toString()) {
+      chat.pinnedMessageId = null;
+      chat.pinnedBy = '';
+      await chat.save();
+      for (const member of chat.members) {
+        const socketId = onlineUsers?.get(member);
+        if (socketId) {
+          io.to(socketId).emit('chat_pinned', {
+            chatId:    chat._id.toString(),
+            messageId: null,
+          });
+        }
+      }
+    }
+
     // moze ostati stara poruka kao preview u sidebaru
     if (chat && chat.lastMessageAt && message.createdAt &&
         chat.lastMessageAt.getTime() === message.createdAt.getTime()) {
       await refreshLastMessage(chat);
 
       // Sidebar update ostalim clanovima
-      const io          = req.app.get('io');
-      const onlineUsers = req.app.get('onlineUsers');
       for (const member of chat.members) {
         if (member === me) continue;
         const socketId = onlineUsers?.get(member);
@@ -168,6 +189,7 @@ router.delete('/:messageId', async (req, res) => {
           io.to(socketId).emit('chat_updated', {
             chatId:      chat._id.toString(),
             lastMessage: chat.lastMessage,
+            lastMessageSender: chat.lastMessageSender,
           });
         }
       }

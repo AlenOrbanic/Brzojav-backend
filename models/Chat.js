@@ -12,8 +12,13 @@ const chatSchema = new mongoose.Schema({
   ownerId: { type: String, default: '' }, // username ownera grupe
 
   lastMessage: { type: String, default: '' },
+  lastMessageSender: { type: String, default: '' }, // username of the last message's sender (for previews)
   lastMessageAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
+
+  // Shared pinned message for the chat (visible to all members)
+  pinnedMessageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+  pinnedBy: { type: String, default: '' }, // username tko je pinao
 });
 
 module.exports = mongoose.model('Chat', chatSchema);

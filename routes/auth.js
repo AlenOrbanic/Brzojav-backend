@@ -39,6 +39,7 @@ function publicUser(user) {
     allowStrangers: user.allowStrangers,
     notificationsEnabled: user.notificationsEnabled,
     theme: user.theme,
+    blockedUsers: user.blockedUsers || [],
   };
 }
 
