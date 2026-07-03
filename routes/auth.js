@@ -6,6 +6,8 @@ const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const UserChat = require('../models/UserChat');
 const authMiddleware = require('../middleware/auth');
+const { OAuth2Client } = require('google-auth-library');
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const rateLimit = require('express-rate-limit');
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -104,7 +106,9 @@ router.post('/login', loginLimiter, async (req, res) => {
     if (!user || user.deleted) {
       return res.status(400).json({ ok: false, error: 'Invalid credentials' });
     }
-
+    if (!user.password) {
+      return res.status(400).json({ ok: false, error: 'This account uses Google Sign-In' });
+    }
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
       return res.status(400).json({ ok: false, error: 'Invalid credentials' });
@@ -275,4 +279,57 @@ router.delete('/me', authMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/auth/google — prijava/registracija preko Google IDja
+router.post('/google', async (req, res) => {
+  const { credential } = req.body;
+  if (!credential) {
+    return res.status(400).json({ ok: false, error: 'Missing Google credential' });
+  }
+
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken:  credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const email   = (payload.email || '').toLowerCase();
+    if (!email) {
+      return res.status(400).json({ ok: false, error: 'Google account has no email' });
+    }
+
+    let user = await User.findOne({ email });
+    if (user && user.deleted) {
+      return res.status(400).json({ ok: false, error: 'This account has been deleted' });
+    }
+
+    // Ako korisnik ne postoji — napravi ga (google usernameu dodamo broj ako je username zauzet)
+    if (!user) {
+      const base = (email.split('@')[0] || 'user').replace(/[^a-z0-9_]/g, '') || 'user';
+      let username = base;
+      let n = 1;
+      while (await User.findOne({ username })) {
+        username = `${base}${n++}`;
+      }
+      user = await User.create({
+        username,
+        email,
+        name:     payload.name || 'Brzojav User',
+        googleId: payload.sub,
+        avatar:   payload.picture || undefined, // undefined -> koristi default iz sheme
+      });
+    } else if (!user.googleId) {
+      // Postojeći (password) korisnik s istim emailom — poveži Google račun
+      user.googleId = payload.sub;
+    }
+
+    user.lastSeen = new Date();
+    await user.save();
+
+    const token = jwt.sign({ username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+    return res.json({ ok: true, token, user: publicUser(user) });
+  } catch (err) {
+    console.error('[auth] Google login error:', err.message);
+    return res.status(401).json({ ok: false, error: 'Google authentication failed' });
+  }
+});
 module.exports = router;
