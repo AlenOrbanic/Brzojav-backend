@@ -6,6 +6,7 @@ const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const UserChat = require('../models/UserChat');
 const authMiddleware = require('../middleware/auth');
+const fetch = require('node-fetch');
 const { OAuth2Client } = require('google-auth-library');
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const rateLimit = require('express-rate-limit');
@@ -287,12 +288,24 @@ router.post('/google', async (req, res) => {
   }
 
   try {
-    const ticket = await googleClient.verifyIdToken({
-      idToken:  credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
-    const email   = (payload.email || '').toLowerCase();
+    // Neka Google verificira token
+    const resp = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`
+    );
+    if (!resp.ok) {
+      return res.status(401).json({ ok: false, error: 'Google authentication failed' });
+    }
+    const payload = await resp.json();
+
+    // Provjere: da je token izdan za NAŠ client i da je email verificiran
+    if (payload.aud !== process.env.GOOGLE_CLIENT_ID) {
+      return res.status(401).json({ ok: false, error: 'Invalid Google client' });
+    }
+    if (payload.email_verified !== 'true' && payload.email_verified !== true) {
+      return res.status(401).json({ ok: false, error: 'Email not verified' });
+    }
+
+    const email = (payload.email || '').toLowerCase();
     if (!email) {
       return res.status(400).json({ ok: false, error: 'Google account has no email' });
     }
@@ -302,7 +315,6 @@ router.post('/google', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'This account has been deleted' });
     }
 
-    // Ako korisnik ne postoji — napravi ga (google usernameu dodamo broj ako je username zauzet)
     if (!user) {
       const base = (email.split('@')[0] || 'user').replace(/[^a-z0-9_]/g, '') || 'user';
       let username = base;
@@ -315,10 +327,9 @@ router.post('/google', async (req, res) => {
         email,
         name:     payload.name || 'Brzojav User',
         googleId: payload.sub,
-        avatar:   payload.picture || undefined, // undefined -> koristi default iz sheme
+        avatar:   payload.picture || undefined,
       });
     } else if (!user.googleId) {
-      // Postojeći (password) korisnik s istim emailom — poveži Google račun
       user.googleId = payload.sub;
     }
 
