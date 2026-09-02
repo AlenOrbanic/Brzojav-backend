@@ -12,8 +12,12 @@ const gossip   = require('./gossip');
 
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server, {
-  cors: { origin: '*' }
+const io = new Server(server, {
+  cors: { origin: '*' },
+  transports: ['websocket'],
+  pingInterval: 25000,
+  pingTimeout: 20000,
+  perMessageDeflate: false,
 });
 
 const PORT    = parseInt(process.env.PORT, 10) || 3000;
@@ -39,7 +43,12 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Node-Secret'],
+  maxAge: 86400
+}));
 app.use(express.json({ limit: '10mb' }));
 
 //node id za svaki request handler
@@ -110,6 +119,11 @@ app.use('/api/links', authMiddleware, require('./routes/links'));
 // Zahtjevaju autentikaciju (token)
 app.use('/api/Messages', authMiddleware, require('./routes/messages'));
 app.use('/api/Chats',    authMiddleware, require('./routes/chats'));
+
+//Health check za uptime
+app.get('/health', (req, res) => {
+  res.status(200).json({ ok: true, ts: Date.now() });
+});
 // Health check
 app.get('/', (req, res) => {
   res.json({
