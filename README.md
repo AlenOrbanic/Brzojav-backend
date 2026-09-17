@@ -1,129 +1,162 @@
+<div align="center">
+
+### Sveučilište Jurja Dobrile u Puli
+### Fakultet informatike
+
+<br><br>
+
+## ALEN ORBANIĆ
+
+## Razvoj web-aplikacije za razmjenu poruka u stvarnom vremenu primjenom hibridne P2P arhitekture
+
+### Završni rad
+
+<br><br>
+
+| | |
+|---|---|
+| **JMBAG:** | 0303094982 |
+| **Studijski smjer:** | preddiplomski studij informatike |
+| **Kolegij:** | Raspodijeljeni sustavi |
+| **Znanstveno područje:** | Društvene znanosti |
+| **Znanstveno polje:** | Informacijske znanosti |
+| **Znanstvena grana:** | Informacijski sustavi i informatologija |
+| **Mentor:** | izv. prof. dr. sc. Nikola Tanković |
+
+<br><br>
+
+**Pula, rujan 2026.**
+
+</div>
+
+---
+
 # Brzojav Backend
 
-This repository contains the backend server for Brzojav, a real-time web messaging application.
+Ovaj repozitorij sadrži backend server za Brzojav, web-aplikaciju za razmjenu poruka u stvarnom vremenu.
 
-The backend provides the REST API, authentication, database access, file uploads, real-time notifications and WebRTC signaling.
+Backend pruža REST API, autentikaciju, pristup bazi podataka, prijenos datoteka, obavijesti u stvarnom vremenu i WebRTC signalizaciju.
 
 ## Frontend
 
-The frontend repository is available here:
+Repozitorij frontenda dostupan je ovdje:
 
 [Brzojav](https://github.com/AlenOrbanic/Brzojav)
 
-## Technologies
+## Tehnologije
 
-- **Node.js** – JavaScript runtime
-- **Express** – HTTP server and REST API
-- **MongoDB** – database
-- **Mongoose** – MongoDB object modeling
-- **Socket.IO** – real-time communication and WebRTC signaling
-- **JWT** – authentication
-- **bcryptjs** – password hashing
-- **Google Auth Library** – Google authentication
-- **Cloudinary** – multimedia file storage
-- **Multer** – multipart file handling
-- **streamifier** – converting uploaded buffers into streams
-- **Helmet** – HTTP security headers
-- **CORS** – cross-origin resource sharing
-- **express-rate-limit** – rate limiting
-- **node-fetch** – HTTP requests between backend nodes and external services
+- **Node.js** – JavaScript runtime okruženje
+- **Express** – HTTP server i REST API
+- **MongoDB** – baza podataka
+- **Mongoose** – objektno modeliranje za MongoDB
+- **Socket.IO** – komunikacija u stvarnom vremenu i WebRTC signalizacija
+- **JWT** – autentikacija
+- **bcryptjs** – hashiranje lozinki
+- **Google Auth Library** – Google autentikacija
+- **Cloudinary** – pohrana multimedijalnih datoteka
+- **Multer** – obrada multipart datoteka
+- **streamifier** – pretvaranje prenesenih buffera u streamove
+- **Helmet** – sigurnosna HTTP zaglavlja
+- **CORS** – dijeljenje resursa različitog podrijetla (cross-origin resource sharing)
+- **express-rate-limit** – ograničavanje broja zahtjeva
+- **node-fetch** – HTTP zahtjevi između backend čvorova i vanjskih servisa
 
-These dependencies are defined in the backend's `package.json`.
+Ove ovisnosti definirane su u backendovom `package.json`.
 
-## Features
+## Značajke
 
-- User registration and login
-- Google authentication
-- JWT authentication
-- User profile management
-- Password changes
-- User blocking
-- Account deletion
-- One-to-one chats
-- Group chats
-- Message storage
-- Message deletion
-- Message reactions
-- Pinned messages
-- File uploads
-- Image and video uploads
-- Link previews
-- Real-time notifications
-- WebRTC signaling
-- Online-user tracking
-- Peer lookup
-- Multiple backend nodes
-- Gossip-based synchronization between nodes
-- Automatic removal of inactive peer records
-- Security headers
-- Request rate limiting
-- NoSQL injection protection
+- Registracija i prijava korisnika
+- Google autentikacija
+- JWT autentikacija
+- Upravljanje korisničkim profilom
+- Promjena lozinke
+- Blokiranje korisnika
+- Brisanje računa
+- Razgovori jedan na jedan
+- Grupni razgovori
+- Pohrana poruka
+- Brisanje poruka
+- Reakcije na poruke
+- Pribadanje (pinanje) poruka
+- Prijenos datoteka
+- Prijenos slika i videozapisa
+- Pregledi poveznica (link previews)
+- Obavijesti u stvarnom vremenu
+- WebRTC signalizacija
+- Praćenje online korisnika
+- Pronalaženje korisnika (peer lookup)
+- Više backend čvorova
+- Gossip sinkronizacija između čvorova
+- Automatsko uklanjanje neaktivnih zapisa o korisnicima
+- Sigurnosna zaglavlja
+- Ograničavanje broja zahtjeva
+- Zaštita od NoSQL injekcija
 
-## Project Structure
+## Struktura projekta
 
 ```text
 Brzojav-backend/
 ├── middleware/
-│   ├── auth.js             # JWT authentication middleware
-│   └── upload.js           # File upload handling
+│   ├── auth.js             # JWT autentikacijski middleware
+│   └── upload.js           # Obrada prijenosa datoteka
 │
 ├── models/
-│   ├── Chat.js             # Chat model
-│   ├── Message.js          # Message model
-│   ├── User.js             # User model
-│   └── UserChat.js         # User-chat relationship
+│   ├── Chat.js             # Model razgovora
+│   ├── Message.js          # Model poruke
+│   ├── User.js             # Model korisnika
+│   └── UserChat.js         # Odnos korisnik–razgovor
 │
 ├── routes/
-│   ├── auth.js             # Authentication and account management
-│   ├── chats.js            # Chat and group management
-│   ├── links.js            # Link preview handling
-│   ├── lookup.js           # Peer/user lookup
-│   ├── messages.js         # Message operations
-│   ├── sync.js             # Inter-node synchronization
-│   └── users.js            # Online-user registration
+│   ├── auth.js             # Autentikacija i upravljanje računom
+│   ├── chats.js            # Upravljanje razgovorima i grupama
+│   ├── links.js            # Obrada pregleda poveznica
+│   ├── lookup.js           # Pronalaženje korisnika/čvorova
+│   ├── messages.js         # Operacije nad porukama
+│   ├── sync.js             # Sinkronizacija između čvorova
+│   └── users.js            # Registracija online korisnika
 │
-├── cloudinary.js            # Cloudinary configuration
-├── db.js                    # MongoDB connection
-├── gossip.js                # Gossip synchronization
-├── index.js                 # Server entry point
-├── peers.js                 # Seed-node configuration
-├── registry.js              # In-memory user registry
+├── cloudinary.js            # Cloudinary konfiguracija
+├── db.js                    # MongoDB konekcija
+├── gossip.js                # Gossip sinkronizacija
+├── index.js                 # Ulazna točka servera
+├── peers.js                 # Konfiguracija seed čvorova
+├── registry.js              # Registar korisnika u memoriji
 ├── package.json
 └── README.md
 ```
 
-The current repository contains separate modules for the database, peer registry, gossip synchronization, WebRTC-related server functionality, routes, middleware, and database models.
+Repozitorij sadrži zasebne module za bazu podataka, registar korisnika, gossip sinkronizaciju, funkcionalnost servera vezanu uz WebRTC, rute, middleware i modele baze podataka.
 
-## Installation
+## Instalacija
 
-### Prerequisites
+### Preduvjeti
 
-Make sure the following are installed and available:
+Provjerite je li sljedeće instalirano i dostupno:
 
 - [Node.js](https://nodejs.org/)
 - npm
-- A MongoDB database
-- A Cloudinary account
-- A Google OAuth client if Google authentication is enabled
+- MongoDB baza podataka
+- Cloudinary račun
+- Google OAuth klijent, ako je omogućena Google autentikacija
 
-### Clone the repository
+### Kloniranje repozitorija
 
 ```bash
 git clone https://github.com/AlenOrbanic/Brzojav-backend.git
 cd Brzojav-backend
 ```
 
-### Install dependencies
+### Instalacija ovisnosti
 
 ```bash
 npm install
 ```
 
-## Environment Variables
+## Varijable okoline
 
-The backend requires environment variables for database access, authentication, Cloudinary, and the multi-node configuration.
+Backend zahtijeva varijable okoline za pristup bazi podataka, autentikaciju, Cloudinary i konfiguraciju više čvorova.
 
-Create a `.env` file:
+Kreirajte `.env` datoteku:
 
 ```env
 PORT=3001
@@ -149,29 +182,29 @@ CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 ```
 
-**Do not commit ****`.env`**** files or real credentials to Git.**
+**Nemojte commitati `.env` datoteke ili stvarne vjerodajnice u Git.**
 
-The MongoDB connection is established using `MONGODB_URI`, while authentication requires `JWT_SECRET`. The server also uses `GOOGLE_CLIENT_ID` for Google authentication.
+MongoDB konekcija se uspostavlja korištenjem `MONGODB_URI`, dok autentikacija zahtijeva `JWT_SECRET`. Server također koristi `GOOGLE_CLIENT_ID` za Google autentikaciju.
 
-The exact Cloudinary environment variable names should match those used by the Cloudinary configuration in `cloudinary.js`.
+Točni nazivi Cloudinary varijabli okoline moraju odgovarati onima korištenima u Cloudinary konfiguraciji u `cloudinary.js`.
 
-## Running the Backend
+## Pokretanje backenda
 
-### Single Node
+### Jedan čvor
 
-To start one backend node:
+Za pokretanje jednog backend čvora:
 
 ```bash
 npm start
 ```
 
-The default port is `3000` if `PORT` is not specified.
+Zadani port je `3000` ako `PORT` nije naveden.
 
-### Three-Node Cluster
+### Klaster od tri čvora
 
-The backend supports running three seed nodes.
+Backend podržava pokretanje tri seed čvora.
 
-The available npm scripts are:
+Dostupne npm skripte su:
 
 ```bash
 npm run node1
@@ -179,13 +212,13 @@ npm run node2
 npm run node3
 ```
 
-To start all three nodes simultaneously:
+Za istovremeno pokretanje sva tri čvora:
 
 ```bash
 npm run cluster
 ```
 
-The three nodes use separate environment files:
+Tri čvora koriste zasebne datoteke okoline:
 
 ```text
 .env
@@ -193,121 +226,121 @@ The three nodes use separate environment files:
 .env.node3
 ```
 
-The scripts defined in `package.json` start each node with its corresponding environment configuration.
+Skripte definirane u `package.json` pokreću svaki čvor s pripadajućom konfiguracijom okoline.
 
-## Backend Architecture
+## Arhitektura backenda
 
-Brzojav uses a hybrid architecture consisting of a REST API, Socket.IO, WebRTC and MongoDB.
+Brzojav koristi hibridnu arhitekturu koja se sastoji od REST API-ja, Socket.IO-a, WebRTC-a i MongoDB-a.
 
-Users communicate with the backend through the REST API and Socket.IO. When possible, messages and files can subsequently be transferred directly between users through WebRTC.
+Korisnici komuniciraju s backendom putem REST API-ja i Socket.IO-a. Kada je to moguće, poruke i datoteke se naknadno mogu prenositi izravno između korisnika putem WebRTC-a.
 
 ## REST API
 
-The backend exposes several groups of REST endpoints.
+Backend izlaže nekoliko grupa REST endpointa.
 
-### Authentication
+### Autentikacija
 
 ```text
 /api/auth
 ```
 
-Handles:
+Obuhvaća:
 
-- registration
-- login
-- Google authentication
-- retrieving the current user
-- updating the profile
-- changing the password
-- blocking users
-- deleting accounts
+- registraciju
+- prijavu
+- Google autentikaciju
+- dohvaćanje trenutnog korisnika
+- ažuriranje profila
+- promjenu lozinke
+- blokiranje korisnika
+- brisanje računa
 
-JWT tokens are generated during authentication and are valid for seven days. Passwords are hashed with bcrypt before being stored.
+JWT tokeni generiraju se prilikom autentikacije i vrijede sedam dana. Lozinke se prije pohrane hashiraju pomoću bcrypta.
 
-### Users
+### Korisnici
 
 ```text
 /api/users
 ```
 
-Provides functionality for:
+Omogućuje funkcionalnost za:
 
-- registering an online user
-- sending heartbeats
-- logging out
-- maintaining the peer registry
+- registraciju online korisnika
+- slanje heartbeat signala
+- odjavu
+- održavanje registra korisnika
 
-The registry stores information such as username, IP address, P2P port, node ID, and last-seen timestamp.
+Registar pohranjuje informacije poput korisničkog imena, IP adrese, P2P porta, ID-a čvora i vremena posljednje aktivnosti.
 
-### Chats
+### Razgovori
 
 ```text
 /api/chats
 ```
 
-Handles:
+Obuhvaća:
 
-- retrieving chats
-- creating direct chats
-- creating groups
-- updating groups
-- leaving groups
-- removing members
-- marking chats as read
-- pinning messages
+- dohvaćanje razgovora
+- kreiranje izravnih razgovora
+- kreiranje grupa
+- ažuriranje grupa
+- napuštanje grupa
+- uklanjanje članova
+- označavanje razgovora kao pročitanih
+- pribadanje poruka
 
-### Messages
+### Poruke
 
 ```text
 /api/Messages
 ```
 
-Handles:
+Obuhvaća:
 
-- retrieving message history
-- sending messages
-- uploading files
-- deleting messages
-- adding reactions
-- removing reactions
+- dohvaćanje povijesti poruka
+- slanje poruka
+- prijenos datoteka
+- brisanje poruka
+- dodavanje reakcija
+- uklanjanje reakcija
 
-Message history is stored in MongoDB. Uploaded files can be sent to Cloudinary, while the resulting URLs are stored with the message.
+Povijest poruka pohranjuje se u MongoDB. Prenesene datoteke se šalju na Cloudinary, dok se dobiveni URL-ovi pohranjuju uz poruku.
 
-### Link Previews
+### Pregledi poveznica
 
 ```text
 /api/links
 ```
 
-Provides metadata for URLs sent through the application.
+Pruža metapodatke za URL-ove poslane putem aplikacije.
 
-## Authentication
+## Autentikacija
 
-Protected endpoints require a JWT access token.
+Zaštićeni endpointi zahtijevaju JWT pristupni token.
 
-The token is supplied using the HTTP `Authorization` header:
+Token se prosljeđuje putem HTTP `Authorization` zaglavlja:
 
 ```http
 Authorization: Bearer <token>
 ```
 
-The authentication middleware validates the token and makes the authenticated username available to the route handlers.
+Autentikacijski middleware provjerava valjanost tokena i čini autenticirano korisničko ime dostupnim route handlerima.
 
-The backend also applies rate limiting to registration and login endpoints to reduce brute-force and automated account creation attempts.
+Backend također primjenjuje ograničavanje broja zahtjeva (rate limiting) na endpointima za registraciju i prijavu kako bi smanjio pokušaje brute-force napada i automatiziranog kreiranja računa.
 
-## Real-Time Communication
+## Komunikacija u stvarnom vremenu
 
-Socket.IO is used for real-time events between the frontend and backend.
+Socket.IO se koristi za događaje u stvarnom vremenu između frontenda i backenda.
 
-The backend maintains a map of currently connected users:
+Backend održava mapu trenutno povezanih korisnika:
 
 ```text
-username → Socket.IO socket ID
+korisničko ime → Socket.IO socket ID
 ```
 
-This allows the server to send notifications to specific users.
+Ovo serveru omogućuje slanje obavijesti određenim korisnicima.
 
-Examples of real-time events include:
+Primjeri događaja u stvarnom vremenu:
 
 ```text
 new_message
@@ -317,91 +350,91 @@ reactions_updated
 webrtc-signal
 ```
 
-The backend uses Socket.IO for WebRTC signaling and notifications rather than acting as the primary relay for peer-to-peer message contents.
+Backend koristi Socket.IO za WebRTC signalizaciju i obavijesti, a ne kao primarni prijenosni kanal za sadržaj peer-to-peer poruka.
 
-## WebRTC Signaling
+## WebRTC signalizacija
 
-The backend provides the signaling layer required to establish WebRTC connections.
+Backend pruža signalizacijski sloj potreban za uspostavu WebRTC veza.
 
-When a client wants to establish a connection with another user:
+Kada klijent želi uspostaviti vezu s drugim korisnikom:
 
-1. The client looks up the other user's peer information.
-2. A WebRTC connection is created.
-3. SDP and ICE information is generated.
-4. Signaling information is sent through Socket.IO.
-5. The backend forwards the signaling data to the destination user.
-6. The browsers establish the WebRTC DataChannel.
-7. Data can then be transferred directly between the peers.
+1. Klijent dohvaća informacije o drugom korisniku (peer lookup).
+2. Kreira se WebRTC veza.
+3. Generiraju se SDP i ICE informacije.
+4. Signalizacijske informacije šalju se putem Socket.IO-a.
+5. Backend prosljeđuje signalizacijske podatke odredišnom korisniku.
+6. Preglednici uspostavljaju WebRTC DataChannel.
+7. Podaci se zatim mogu prenositi izravno između korisnika.
 
-The backend does not inspect the actual contents transferred through the WebRTC DataChannel.
+Backend ne pregledava stvarni sadržaj koji se prenosi putem WebRTC DataChannela.
 
-## File Uploads
+## Prijenos datoteka
 
-Files uploaded through the REST API are processed using Multer.
+Datoteke prenesene putem REST API-ja obrađuju se korištenjem Multera.
 
-The backend then uploads them to Cloudinary.
+Backend ih zatim prenosi na Cloudinary.
 
-Depending on the MIME type, files are categorized as:
+Ovisno o MIME tipu, datoteke se kategoriziraju kao:
 
-- images
-- videos
-- other files
+- slike
+- videozapisi
+- ostale datoteke
 
-The resulting Cloudinary URL is stored with the message in MongoDB.
+Dobiveni Cloudinary URL pohranjuje se uz poruku u MongoDB.
 
-## Security
+## Sigurnost
 
-The backend includes several security measures:
+Backend uključuje nekoliko sigurnosnih mjera:
 
-- Helmet security headers
-- JWT authentication
-- bcrypt password hashing
-- login rate limiting
-- registration rate limiting
+- Helmet sigurnosna zaglavlja
+- JWT autentikacija
+- bcrypt hashiranje lozinki
+- ograničavanje broja pokušaja prijave
+- ograničavanje broja pokušaja registracije
 - CORS
-- NoSQL operator filtering
-- protected inter-node synchronization
-- authenticated Socket.IO connections
-- centralized error handling
+- filtriranje NoSQL operatora
+- zaštićena sinkronizacija između čvorova
+- autenticirane Socket.IO konekcije
+- centralizirano rukovanje greškama
 
-Requests containing MongoDB operators such as `$` or keys containing `.` are filtered before reaching the application logic.
+Zahtjevi koji sadrže MongoDB operatore poput `$` ili ključeve koji sadrže `.` filtriraju se prije nego dosegnu logiku aplikacije.
 
-## Available Scripts
+## Dostupne skripte
 
-| Command           | Description                      |
-| ----------------- | -------------------------------- |
-| `npm install`     | Installs dependencies            |
-| `npm start`       | Starts the backend               |
-| `npm run dev`     | Starts the backend using Nodemon |
-| `npm run node1`   | Starts seed node 1               |
-| `npm run node2`   | Starts seed node 2               |
-| `npm run node3`   | Starts seed node 3               |
-| `npm run cluster` | Starts all three seed nodes      |
+| Naredba           | Opis                              |
+| ----------------- | ---------------------------------- |
+| `npm install`     | Instalira ovisnosti                |
+| `npm start`       | Pokreće backend                    |
+| `npm run dev`     | Pokreće backend koristeći Nodemon  |
+| `npm run node1`   | Pokreće seed čvor 1                |
+| `npm run node2`   | Pokreće seed čvor 2                |
+| `npm run node3`   | Pokreće seed čvor 3                |
+| `npm run cluster` | Pokreće sva tri seed čvora         |
 
-These scripts are defined in the repository's `package.json`.
+Ove skripte definirane su u `package.json` repozitorija.
 
-## Deployment
+## Postavljanje u produkciju (deployment)
 
-The backend can be deployed to a Node.js-compatible hosting provider.
+Backend se može postaviti na hosting servis kompatibilan s Node.js-om.
 
-When deploying multiple nodes, each node should have its own:
+Prilikom postavljanja više čvorova, svaki čvor treba imati svoj:
 
 - `PORT`
 - `NODE_ID`
 - `SELF_URL`
-- seed-node configuration
+- konfiguraciju seed čvorova
 
-All nodes must share the same:
+Svi čvorovi moraju dijeliti isti:
 
-- MongoDB database
+- MongoDB bazu podataka
 - `NODE_SECRET`
 
-The frontend must also be configured to use the deployed backend URL.
+Frontend također mora biti konfiguriran da koristi postavljeni (deployani) URL backenda.
 
-### ! Important !
-_peers.js, gossip.js and registry.js are unused in the app. they are left in case of making a desktop version of the app._
+### ! Važno !
+_peers.js, gossip.js i registry.js se ne koriste u aplikaciji. Ostavljeni su za slučaj izrade desktop verzije aplikacije._
 
-## Related Repository
+## Povezani repozitorij
 
 Frontend:
 
