@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
   blockedUsers: [{ type: String }],
   createdAt: { type: Date, default: Date.now },
   deleted: { type: Boolean, default: false },
+
+  // Password reset (token is stored hashed, never in plain text)
+  resetPasswordToken: { type: String, default: null },
+  resetPasswordExpires: { type: Date, default: null },
 });
 
 module.exports = mongoose.model('User', userSchema);

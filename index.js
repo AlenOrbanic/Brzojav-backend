@@ -114,6 +114,7 @@ app.use('/api/users',    require('./routes/users'));
 app.use('/api/lookup',   require('./routes/lookup'));
 app.use('/api/sync',     requireNodeSecret, require('./routes/sync'));
 app.use('/api/auth',     require('./routes/auth'));
+app.use('/api/auth',     require('./routes/passwordReset'));
 app.use('/api/links', authMiddleware, require('./routes/links'));
 
 // Zahtjevaju autentikaciju (token)
