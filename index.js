@@ -117,7 +117,7 @@ app.use('/api/sync',     requireNodeSecret, require('./routes/sync'));
 app.use('/api/auth',     require('./routes/auth'));
 app.use('/api/auth',     require('./routes/passwordReset'));
 app.use('/api/links', authMiddleware, require('./routes/links'));
-
+app.use('/api/stickers', authMiddleware, require('./routes/stickers'));
 // Zahtjevaju autentikaciju (token)
 app.use('/api/Messages', authMiddleware, require('./routes/messages'));
 app.use('/api/Chats',    authMiddleware, require('./routes/chats'));

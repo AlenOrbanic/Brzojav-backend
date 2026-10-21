@@ -4,6 +4,7 @@ const router             = require('express').Router();
 const Message            = require('../models/Message');
 const Chat               = require('../models/Chat');
 const UserChat           = require('../models/UserChat');
+const Sticker            = require('../models/Sticker');
 const { upload, uploadToCloudinary } = require('../middleware/upload');
 
 // Ovo nam treba nakon brisanja poruke, inače moze stari message ostati kao preview
@@ -52,6 +53,8 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
   const text = req.body.text || '';
   // Client ID — koristi se za deduplikaciju ako je poruka već stigla preko P2P DataChannela
   const clientId = req.body.clientId || null;
+  // Poslani sticker iz korisnikove biblioteke (bez ponovnog uploada)
+  const stickerId = typeof req.body.stickerId === 'string' ? req.body.stickerId : null;
 
   let replyTo = null;
   if (req.body.replyTo) {
@@ -59,7 +62,7 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
     catch { return res.status(400).json({ ok: false, error: 'Invalid replyTo' }); }
   }
 
-  if (!text.trim() && (!req.files || req.files.length === 0)) {
+  if (!text.trim() && (!req.files || req.files.length === 0) && !stickerId) {
     return res.status(400).json({ ok: false, error: 'Message cannot be empty' });
   }
 
@@ -90,6 +93,20 @@ router.post('/:chatId', upload.array('files', 10), async (req, res) => {
         name:     file.originalname,
       };
     }));
+
+    // Sticker se šalje kao slika koja pokazuje na već uploadani URL.
+    // Prihvaćamo samo stickere koji pripadaju pošiljatelju.
+    if (stickerId) {
+      const sticker = await Sticker.findOne({ _id: stickerId, owner: me }).catch(() => null);
+      if (!sticker) {
+        return res.status(404).json({ ok: false, error: 'Sticker not found' });
+      }
+      files.push({
+        fileType: 'image',
+        url:      sticker.url,
+        name:     `sticker-${sticker._id}.webp`,
+      });
+    }
 
     const message = await Message.create({
       chatId,

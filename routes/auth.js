@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const UserChat = require('../models/UserChat');
+const Sticker = require('../models/Sticker');
 const authMiddleware = require('../middleware/auth');
 const fetch = require('node-fetch');
 const { OAuth2Client } = require('google-auth-library');
@@ -259,6 +260,7 @@ router.delete('/me', authMiddleware, async (req, res) => {
     await Message.updateMany({ sender: me }, { $set: { sender: tombstone } });
     await UserChat.updateMany({ username: me }, { $set: { username: tombstone } });
     await User.updateMany({ blockedUsers: me }, { $pull: { blockedUsers: me } });
+    await Sticker.deleteMany({ owner: me });
 
     user.username       = tombstone;
     user.deleted        = true;
