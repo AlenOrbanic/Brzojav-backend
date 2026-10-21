@@ -4,6 +4,7 @@ const http       = require('http');
 const jwt        = require('jsonwebtoken');
 const helmet     = require('helmet');
 const { Server } = require('socket.io');
+const User = require('./models/User');
 require('dotenv').config();
 
 const registry = require('./registry');
@@ -67,30 +68,154 @@ io.use((socket, next) => {
   if (!token) return next(new Error('unauthorized'));
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    socket.username = payload.username;
+    socket.username = String(payload.username || '').toLowerCase();
     next();
   } catch {
     next(new Error('unauthorized'));
   }
 });
+// --- Presence ---
+// "online" = has a live socket AND sent an activity ping recently.
+// The client pings every ~25s while the tab is visible and the user is active,
+// so a forgotten open tab or a sleeping laptop goes "inactive" after ~70s.
+const socketsByUser = new Map();   // username -> Set<socketId> (multi-tab safe)
+const offlineTimers = new Map();   // grace period so page refreshes don't flicker
+const lastPing      = new Map();   // username -> ms timestamp of last activity ping
+const announced     = new Map();   // username -> last online state pushed to subscribers
+const GRACE_MS      = 5000;
+const ONLINE_TTL_MS = 100000;
+const SWEEP_MS      = 20000;
+const MAX_SUBS      = 500;
+
+const isConnected = (u) => (socketsByUser.get(u)?.size ?? 0) > 0;
+const isOnline    = (u) => isConnected(u) && (Date.now() - (lastPing.get(u) || 0)) < ONLINE_TTL_MS;
+
+async function getStatuses(usernames) {
+  if (!usernames.length) return [];
+  // Raw driver on purpose: Mongoose's sanitizeFilter (if enabled in db.js) rewrites
+  // $in/$ne into harmless $eq matches, which made this query return nothing.
+  const all = await User.collection
+    .find({ username: { $in: usernames } }, { projection: { username: 1, lastSeen: 1, showLastSeen: 1, deleted: 1 } })
+    .toArray();
+  const docs = all.filter(d => d.deleted !== true);
+  return docs.map(d => {
+    const hidden = d.showLastSeen === false;
+    // newest known activity wins (the DB value can lag behind the in-memory ping)
+    let lastSeen = d.lastSeen;
+    const lp = lastPing.get(d.username);
+    if (lp && (!lastSeen || lp > new Date(lastSeen).getTime())) lastSeen = new Date(lp);
+    return {
+      username: d.username,
+      hidden,
+      online:   hidden ? false : isOnline(d.username),
+      lastSeen: hidden ? null  : lastSeen,
+    };
+  });
+}
+
+async function broadcastPresence(username) {
+  try {
+    const [status] = await getStatuses([username]);
+    if (status) io.to(`presence:${username}`).emit('presence', status);
+  } catch (e) {
+    console.warn('[presence] broadcast failed:', e.message);
+  }
+}
+
+// Recompute the user's state and push it to subscribers only if it changed.
+async function syncPresence(u) {
+  const now = isOnline(u);
+  if (announced.get(u) === now) return;
+  announced.set(u, now);
+  console.log(`[presence] ${u} -> ${now ? 'online' : 'inactive'}`);
+  if (!now && lastPing.has(u)) {
+    // went inactive: remember the moment of their last real activity
+    await User.updateOne({ username: u }, { lastSeen: new Date(lastPing.get(u)) }).catch(() => {});
+  }
+  broadcastPresence(u);
+}
+
+// Catch users whose pings stopped (tab hidden, idle, laptop asleep) while the socket is still open.
+setInterval(() => {
+  for (const [u, wasOnline] of announced) {
+    if (wasOnline && isConnected(u) && !isOnline(u)) syncPresence(u);
+  }
+}, SWEEP_MS);
 
 io.on('connection', (socket) => {
-  onlineUsers.set(socket.username, socket.id);
+  const u = socket.username;
+  onlineUsers.set(u, socket.id);
 
-  // Klijenti razmjenjuju SDP/ICE preko ovog kanala da bi otvorili DataChannel.
-  // Server samo prosljedjuje paket - ne čita ni ne sprema sadrzaj.
+  // presence: track socket
+  let set = socketsByUser.get(u);
+  if (!set) { set = new Set(); socketsByUser.set(u, set); }
+  set.add(socket.id);
+  clearTimeout(offlineTimers.get(u));
+  offlineTimers.delete(u);
+  lastPing.set(u, Date.now());
+  syncPresence(u);
+
+  socket.on('presence-subscribe', async (usernames, ack) => {
+    if (!Array.isArray(usernames)) return;
+    const list = [...new Set(
+      usernames.filter(x => typeof x === 'string').map(x => x.toLowerCase())
+    )].slice(0, MAX_SUBS);
+    list.forEach(name => socket.join(`presence:${name}`));
+    try {
+      const statuses = await getStatuses(list);
+      console.log(`[presence] ${u} subscribed to ${list.length} users, found ${statuses.length}`);
+      if (typeof ack === 'function') ack(statuses);
+    } catch (e) {
+      console.warn('[presence] subscribe failed:', e.message);
+    }
+  });
+
+  // activity heartbeat from the client (tab visible + user active)
+  socket.on('presence-ping', () => {
+    lastPing.set(u, Date.now());
+    syncPresence(u);
+  });
+
+  // client calls this after changing the "last seen" privacy setting
+  socket.on('presence-refresh', () => broadcastPresence(u));
+
+  // WebRTC signaling
   socket.on('webrtc-signal', ({ to, data }) => {
-    if (!to) return;
-    const targetSocketId = onlineUsers.get(to);
-    if (!targetSocketId) return; // peer offline, klijent ce fallbackati na server
+    if (!to || typeof to !== 'string') return;
+    const targetSocketId = onlineUsers.get(to.toLowerCase());
+    if (!targetSocketId) return;
     io.to(targetSocketId).emit('webrtc-signal', {
-      from: socket.username,
+      from: u,
       data,
     });
   });
 
   socket.on('disconnect', () => {
-    if (socket.username) onlineUsers.delete(socket.username);
+    const s = socketsByUser.get(u);
+    if (s) s.delete(socket.id);
+
+    // keep onlineUsers pointing at a live socket if the user has another tab open
+    if (onlineUsers.get(u) === socket.id) {
+      const remaining = s && s.size > 0 ? s.values().next().value : null;
+      if (remaining) onlineUsers.set(u, remaining);
+      else onlineUsers.delete(u);
+    }
+
+    if (!s || s.size > 0) return;
+    socketsByUser.delete(u);
+
+    offlineTimers.set(u, setTimeout(async () => {
+      offlineTimers.delete(u);
+      if (isConnected(u)) return;   // came back within the grace period
+      // if they were active right up to the disconnect, "now" is accurate;
+      // otherwise use the time of their last ping
+      const last = lastPing.get(u) || 0;
+      const when = (Date.now() - last) < ONLINE_TTL_MS ? Date.now() : (last || Date.now());
+      lastPing.delete(u);
+      announced.set(u, false);
+      await User.updateOne({ username: u }, { lastSeen: new Date(when) }).catch(() => {});
+      broadcastPresence(u);
+    }, GRACE_MS));
   });
 });
 
@@ -135,6 +260,7 @@ app.get('/', (req, res) => {
     users:    registry.count(),
     peers:    peers.list().length,
     commit:   process.env.RENDER_GIT_COMMIT || 'local',
+    presence: 'v2',
     message:  'Brzojav seed node running',
   });
 });
