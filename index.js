@@ -134,6 +134,8 @@ app.get('/', (req, res) => {
     port:     PORT,
     users:    registry.count(),
     peers:    peers.list().length,
+    commit:   process.env.RENDER_GIT_COMMIT || 'local',
+    message:  'Brzojav seed node running',
   });
 });
 
