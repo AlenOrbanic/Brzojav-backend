@@ -6,6 +6,34 @@ const UserChat = require('../models/UserChat');
 const User     = require('../models/User');
 const Message  = require('../models/Message');
 
+// Creates a server-side system message (sender: 'system'), updates the chat preview
+// and notifies every current member over socket.io (except those in `exclude`).
+// Call this AFTER chat.members has been updated, so removed users are not notified.
+async function postSystemMessage(req, chat, text, { removedUsername = null, exclude = [] } = {}) {
+  const message = await Message.create({ chatId: chat._id, sender: 'system', text });
+
+  chat.lastMessage       = text;
+  chat.lastMessageSender = 'system';
+  chat.lastMessageAt     = message.createdAt;
+  await chat.save();
+
+  const io          = req.app.get('io');
+  const onlineUsers = req.app.get('onlineUsers');
+  for (const member of chat.members) {
+    if (exclude.includes(member)) continue;
+    const socketId = onlineUsers?.get(member);
+    if (!socketId) continue;
+    io.to(socketId).emit('system_message', {
+      chatId:          chat._id.toString(),
+      messageId:       message._id.toString(),
+      text,
+      createdAt:       message.createdAt,
+      removedUsername,
+    });
+  }
+  return message;
+}
+
 // GET /api/chats — dobijemo sve chatove od usera
 router.get('/', async (req, res) => {
   const me = req.user.username;
@@ -317,6 +345,12 @@ router.post('/:id/leave', async (req, res) => {
     await chat.save();
     await UserChat.deleteOne({ username: me, chatId });
 
+    // "<name> left the group." — shown to the remaining members
+    const leaver = await User.findOne({ username: me }, 'name');
+    await postSystemMessage(req, chat, `${leaver?.name || me} left the group.`, {
+      removedUsername: me,
+    });
+
     return res.json({ ok: true, deleted: false });
   } catch (err) {
     console.error('[chats] POST /leave error:', err.message);
@@ -349,7 +383,19 @@ router.post('/:id/kick', async (req, res) => {
       io.to(socketId).emit('chat_removed', { chatId: chatId.toString() });
     }
 
-    return res.json({ ok: true });
+    // "<kicked name> was kicked by <owner name>." — shown to the remaining members.
+    // The owner gets it from the response, so they are excluded from the socket emit.
+    const [kickedUser, kicker] = await Promise.all([
+      User.findOne({ username }, 'name deleted'),
+      User.findOne({ username: me }, 'name'),
+    ]);
+    const kickedName = kickedUser?.deleted ? 'Deleted user' : (kickedUser?.name || username);
+    const message = await postSystemMessage(
+      req, chat, `${kickedName} was kicked by ${kicker?.name || me}.`,
+      { removedUsername: username, exclude: [me] }
+    );
+
+    return res.json({ ok: true, message });
   } catch (err) {
     console.error('[chats] POST /kick error:', err.message);
     return res.status(500).json({ ok: false, error: 'Server error' });
