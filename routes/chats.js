@@ -105,6 +105,9 @@ router.get('/', async (req, res) => {
 
     const result = chats.map(chat => {
       const settings = settingsMap[chat._id.toString()] || {};
+      // Shared nicknames (set by anyone in the chat, visible to everyone)
+      const nicknames = {};
+      for (const n of chat.nicknames || []) nicknames[n.username] = n.nickname;
       const ov = previewOverride[chat._id.toString()];
       const pinnedMsg = chat.pinnedMessageId ? pinnedMap[chat.pinnedMessageId.toString()] : null;
       const base = {
@@ -116,7 +119,7 @@ router.get('/', async (req, res) => {
         lastMessageAt: chat.lastMessageAt,
         pinned: settings.pinned || false,
         muted: settings.muted || false,
-        nickname: settings.nickname || '',
+        nicknames,
         lastReadAt: settings.lastReadAt || null,
         pinnedMessageId: chat.pinnedMessageId ? chat.pinnedMessageId.toString() : null,
         pinnedMessage: pinnedMsg ? {
@@ -138,7 +141,9 @@ router.get('/', async (req, res) => {
             const isDeleted = profile?.deleted === true;
             return {
               username,
-              name: isDeleted ? 'Deleted user' : (profile?.name || username),
+              name: isDeleted ? 'Deleted user' : (nicknames[username] || profile?.name || username),
+              realName: isDeleted ? 'Deleted user' : (profile?.name || username),
+              nickname: isDeleted ? '' : (nicknames[username] || ''),
               avatar: isDeleted ? '' : (profile?.avatar || ''),
               lastSeen: isDeleted ? null : (profile?.showLastSeen === false ? null : (profile?.lastSeen || null)),
               isOwner: username === chat.ownerId,
@@ -156,7 +161,9 @@ router.get('/', async (req, res) => {
         ...base,
         otherUser: otherProfile ? {
           username: otherProfile.username,
-          name:     otherDeleted ? 'Deleted user' : otherProfile.name,
+          name:     otherDeleted ? 'Deleted user' : (nicknames[otherUsername] || otherProfile.name),
+          realName: otherDeleted ? 'Deleted user' : otherProfile.name,
+          nickname: otherDeleted ? '' : (nicknames[otherUsername] || ''),
           avatar:   otherDeleted ? '' : otherProfile.avatar,
           lastSeen: otherDeleted ? null : (otherProfile.showLastSeen === false ? null : (otherProfile.lastSeen || null)),
           phone:    otherDeleted ? '' : (otherProfile.phone || ''),
@@ -270,11 +277,11 @@ router.post('/group', async (req, res) => {
   }
 });
 
-// PATCH /api/chats/:id — update group name/avatar, or personal settings (pin/mute/nickname)
+// PATCH /api/chats/:id — update group name/avatar, or personal settings (pin/mute)
 router.patch('/:id', async (req, res) => {
   const me = req.user.username;
   const chatId = req.params.id;
-  const { name, avatar, pinned, muted, nickname } = req.body;
+  const { name, avatar, pinned, muted } = req.body;
 
   try {
     const chat = await Chat.findById(chatId);
@@ -292,11 +299,14 @@ router.patch('/:id', async (req, res) => {
       await chat.save();
     }
 
-    // Personal settings (pin, mute, nickname) — stored in UserChat
-    if (pinned !== undefined || muted !== undefined || nickname !== undefined) {
+    // Personal settings (pin, mute) — stored in UserChat. Only write fields that were sent.
+    const set = {};
+    if (pinned !== undefined) set.pinned = pinned;
+    if (muted  !== undefined) set.muted  = muted;
+    if (Object.keys(set).length) {
       await UserChat.findOneAndUpdate(
         { username: me, chatId },
-        { $set: { pinned, muted, nickname } },
+        { $set: set },
         { upsert: true, new: true }
       );
     }
@@ -476,6 +486,46 @@ router.post('/:id/pin-message', async (req, res) => {
     return res.json({ ok: true, pinnedMessage: snapshot });
   } catch (err) {
     console.error('[chats] POST /:id/pin-message error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+// PATCH /api/chats/:id/nickname — set/clear a nickname for a member.
+// Stored on the Chat, so it is the same for every member of the conversation.
+// body: { username: <member being renamed>, nickname: <string, empty = reset> }
+router.patch('/:id/nickname', async (req, res) => {
+  const me = req.user.username;
+  const { username, nickname } = req.body;
+
+  try {
+    const chat = await Chat.findById(req.params.id);
+    if (!chat || !chat.members.includes(me)) {
+      return res.status(404).json({ ok: false, error: 'Chat not found' });
+    }
+
+    const target = typeof username === 'string' ? username.toLowerCase() : '';
+    if (!chat.members.includes(target)) {
+      return res.status(400).json({ ok: false, error: 'User is not in this chat' });
+    }
+
+    const clean = typeof nickname === 'string' ? nickname.trim().slice(0, 50) : '';
+
+    chat.nicknames = (chat.nicknames || []).filter(n => n.username !== target);
+    if (clean) chat.nicknames.push({ username: target, nickname: clean });
+    await chat.save();
+
+    // Tell every other member so their UI updates live
+    const io          = req.app.get('io');
+    const onlineUsers = req.app.get('onlineUsers');
+    for (const member of chat.members) {
+      if (member === me) continue;
+      const socketId = onlineUsers?.get(member);
+      if (socketId) io.to(socketId).emit('nickname_updated', { chatId: chat._id.toString() });
+    }
+
+    return res.json({ ok: true, username: target, nickname: clean });
+  } catch (err) {
+    console.error('[chats] PATCH /:id/nickname error:', err.message);
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });

@@ -19,6 +19,13 @@ const chatSchema = new mongoose.Schema({
   // Shared pinned message for the chat (visible to all members)
   pinnedMessageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
   pinnedBy: { type: String, default: '' }, // username tko je pinao
+
+  // Shared nicknames: one entry per member, visible to EVERYONE in the chat
+  nicknames: [{
+    _id: false,
+    username: { type: String, required: true },
+    nickname: { type: String, maxlength: 50 },
+  }],
 });
 
 module.exports = mongoose.model('Chat', chatSchema);
